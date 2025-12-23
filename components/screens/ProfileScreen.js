@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
   // --- Header Styles ---
   topDarkSection: {
     backgroundColor: NAVY_BLUE,
-    height: scaleHeight(120),
+    height: scaleHeight(100),
     borderBottomLeftRadius: scaleWidth(35),
     borderBottomRightRadius: scaleWidth(35),
     paddingBottom: scaleHeight(10),
@@ -552,19 +552,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: scaleWidth(20),
-    paddingTop: scaleHeight(20),
+    paddingTop: scaleHeight(10),
   },
-  // backButton: {
-  //   padding: scaleWidth(12),
-  //   marginRight: scaleWidth(10),
-  // },
   backButton: {
-  padding: 12, 
+  padding: 10, 
   justifyContent: 'center',
   alignItems: 'left',
   minHeight: 55, // Removed scaleHeight
   minWidth: 55, // Removed scaleWidth
-},
+  },
   backButtonText: {
     fontSize: scaleFont(35),
     color: 'white',
@@ -594,8 +590,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: scaleWidth(35),
     borderTopRightRadius: scaleWidth(35),
-    marginTop: -scaleWidth(15),
+    marginTop: scaleWidth(-15),
     paddingTop: scaleWidth(20),
+    // transform: [{ translateY: -scaleHeight(10) }], // 🔼 move up slightly
   },
   scrollContent: {
     paddingBottom: scaleHeight(40),
@@ -614,9 +611,9 @@ const styles = StyleSheet.create({
     marginBottom: scaleHeight(10),
   },
   profileImage: {
-    width: scaleWidth(120),
-    height: scaleWidth(120),
-    borderRadius: scaleWidth(60),
+    width: scaleWidth(100),
+    height: scaleWidth(100),
+    borderRadius: scaleWidth(50),
   },
   userNameDisplay: {
     fontSize: scaleFont(24),

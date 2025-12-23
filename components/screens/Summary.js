@@ -13,11 +13,13 @@ import {
   Alert,
   ActivityIndicator,
   SafeAreaView,
-  StatusBar
+  StatusBar,
+  Platform,
 } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import DateTimePicker from '@react-native-community/datetimepicker';
+// import DateTimePicker from '@react-native-community/datetimepicker';
+import { colors, fonts } from '../../config/globall';
 
 const { width, height } = Dimensions.get('window');
 
@@ -29,12 +31,11 @@ const scaleHeight = (size) => (height / baseHeight) * size;
 const scaleFont = (size) => scaleWidth(size);
 
 /* ──────────────────────  COLORS  ────────────────────── */
-const NAVY_BLUE = '#11224D';
+const NAVY_BLUE = colors.primaryButton || '#11224D';
 const WHITE = '#FFFFFF';
 const LIGHT_GREY = '#F4F7F9';
 const BORDER_GREY = '#E0E0E0';
 const TEXT_LIGHT = '#666666';
-const TEXT_DARK = '#1A1A1A';
 
 /* ──────────────────────  DROPDOWN OPTIONS  ────────────────────── */
 const periodOptions = [
@@ -535,7 +536,7 @@ export default function SummaryScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={NAVY_BLUE} barStyle="light-content" />
+      <StatusBar barStyle="default" />
 
       {/* Main Container with Navy Blue Background */}
       <View style={styles.mainContainer}>
@@ -666,13 +667,13 @@ const styles = StyleSheet.create({
     flex: 1 
   },
   content: { 
-    padding: 16 
+    padding: scaleWidth(16) 
   },
 
   // --- Header Styles ---
   topDarkSection: {
     backgroundColor: NAVY_BLUE,
-    height: scaleHeight(120),
+    height: scaleHeight(100),
     borderBottomLeftRadius: scaleWidth(35),
     borderBottomRightRadius: scaleWidth(35),
     paddingBottom: scaleHeight(10),
@@ -682,24 +683,33 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: scaleWidth(20),
-    paddingTop: scaleHeight(20),
+    paddingTop: scaleHeight(10),
   },
   backButton: {
-    padding: scaleWidth(8),
-    marginRight: scaleWidth(10),
+    padding: 10, 
+    justifyContent: 'center',
+    alignItems: 'left',
+    minHeight: 55,
+    minWidth: 55,
   },
   backButtonText: {
-    fontSize: scaleFont(28),
+    fontSize: scaleFont(35),
     color: 'white',
     fontWeight: '300',
   },
   headerTitle: {
-    fontSize: scaleFont(24),
-    fontWeight: '800',
-    color: 'white',
-    textAlign: 'left',
+    fontSize: scaleFont(22),
+    fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
+    color: WHITE,
+    textAlign: 'center',
     flex: 1,
     marginLeft: scaleWidth(5),
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+        fontFamily: 'sans-serif-condensed',
+      },
+    }),
   },
   headerSpacer: {
     width: scaleWidth(36),
@@ -711,34 +721,32 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: scaleWidth(35),
     borderTopRightRadius: scaleWidth(35),
-    marginTop: -scaleWidth(15),
+    marginTop: scaleWidth(-15),
     paddingTop: scaleWidth(20),
   },
 
   card: {
     backgroundColor: WHITE,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: BORDER_GREY,
+    borderRadius: scaleWidth(10),
+    padding: scaleWidth(16),
+    marginBottom: scaleHeight(16),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cardTitle: { 
-    fontSize: 17, 
-    fontWeight: '600', 
+    fontSize: scaleFont(18),
+    fontWeight: '700', 
     color: NAVY_BLUE, 
-    marginBottom: 12 
+    marginBottom: scaleHeight(12),
   },
 
   row: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    marginBottom: 12, 
+    marginBottom: scaleHeight(12), 
     justifyContent: 'space-between' 
   },
   radio: { 
@@ -746,12 +754,12 @@ const styles = StyleSheet.create({
     alignItems: 'center' 
   },
   radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
+    width: scaleWidth(20),
+    height: scaleWidth(20),
+    borderRadius: scaleWidth(10),
+    borderWidth: scaleWidth(2),
     borderColor: NAVY_BLUE,
-    marginRight: 8,
+    marginRight: scaleWidth(8),
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -759,8 +767,8 @@ const styles = StyleSheet.create({
     backgroundColor: NAVY_BLUE 
   },
   radioLabel: { 
-    fontSize: 14, 
-    color: TEXT_DARK 
+    fontSize: scaleFont(14), 
+    color: TEXT_LIGHT,
   },
   dropdown: {
     flex: 1,
@@ -768,82 +776,84 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: WHITE,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginLeft: 12,
-    borderWidth: 1,
+    paddingHorizontal: scaleWidth(12),
+    paddingVertical: scaleHeight(10),
+    borderRadius: scaleWidth(8),
+    marginLeft: scaleWidth(12),
+    borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
   },
   disabled: { 
     opacity: 0.5 
   },
   dropdownText: { 
-    fontSize: 14, 
-    color: TEXT_DARK 
+    fontSize: scaleFont(14), 
+    color: NAVY_BLUE,
+    fontWeight: '600',
   },
 
   dateRow: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     justifyContent: 'space-between', 
-    marginBottom: 12 
+    marginBottom: scaleHeight(12) 
   },
   dateInput: {
     flex: 1,
     backgroundColor: WHITE,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    fontSize: 14,
-    marginHorizontal: 4,
-    borderWidth: 1,
+    paddingHorizontal: scaleWidth(12),
+    paddingVertical: scaleHeight(10),
+    borderRadius: scaleWidth(8),
+    fontSize: scaleFont(14),
+    marginHorizontal: scaleWidth(4),
+    borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
     justifyContent: 'center',
-    height: 40,
+    height: scaleHeight(40),
   },
   dateText: { 
-    fontSize: 14, 
-    color: TEXT_DARK 
+    fontSize: scaleFont(14), 
+    color: NAVY_BLUE,
+    fontWeight: '600',
   },
   placeholderText: { 
-    fontSize: 14, 
+    fontSize: scaleFont(14), 
     color: TEXT_LIGHT 
   },
   to: { 
-    fontSize: 14, 
+    fontSize: scaleFont(14), 
     color: TEXT_LIGHT, 
-    marginHorizontal: 8 
+    marginHorizontal: scaleWidth(8) 
   },
 
   queryBtn: {
     backgroundColor: NAVY_BLUE,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: scaleHeight(12),
+    borderRadius: scaleWidth(12),
     alignItems: 'center',
-    marginTop: 8,
-    borderWidth: 1,
+    marginTop: scaleHeight(8),
+    borderWidth: scaleWidth(1),
     borderColor: NAVY_BLUE,
   },
   queryBtnText: { 
     color: WHITE, 
     fontWeight: '600', 
-    fontSize: 15 
+    fontSize: scaleFont(15) 
   },
 
   chartTitle: { 
-    fontSize: 16, 
+    fontSize: scaleFont(16), 
     fontWeight: '600', 
     color: NAVY_BLUE, 
-    marginTop: 24, 
-    marginBottom: 8 
+    marginTop: scaleHeight(24), 
+    marginBottom: scaleHeight(8) 
   },
   chartWrapper: { 
-    marginBottom: 16, 
+    marginBottom: scaleHeight(16), 
     backgroundColor: WHITE, 
-    borderRadius: 8, 
-    padding: 16, 
-    borderWidth: 1,
+    borderRadius: scaleWidth(8), 
+    padding: scaleWidth(16), 
+    borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
   },
   chartContainer: { 
@@ -855,34 +865,34 @@ const styles = StyleSheet.create({
     position: 'relative' 
   },
   yAxisLabel: { 
-    fontSize: 10, 
+    fontSize: scaleFont(10), 
     color: TEXT_LIGHT, 
     textAlign: 'right', 
-    paddingRight: 4,
+    paddingRight: scaleWidth(4),
     height: scaleHeight(16) 
   },
   chart: { 
     flex: 1, 
-    borderWidth: 1, 
+    borderWidth: scaleWidth(1), 
     borderColor: BORDER_GREY, 
-    borderRadius: 8, 
-    padding: 8, 
-    paddingRight: 12
+    borderRadius: scaleWidth(8), 
+    padding: scaleWidth(8), 
+    paddingRight: scaleWidth(12)
   },
   xAxis: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 18,
+    marginTop: scaleHeight(18),
     marginLeft: scaleWidth(45),
-    paddingRight: 8,
+    paddingRight: scaleWidth(8),
   },
   xAxisLabel: { 
-    fontSize: 10, 
+    fontSize: scaleFont(10), 
     color: TEXT_LIGHT 
   },
   noDataText: { 
     textAlign: 'center', 
-    marginTop: 8, 
+    marginTop: scaleHeight(8), 
     color: TEXT_LIGHT 
   },
 
@@ -894,11 +904,11 @@ const styles = StyleSheet.create({
   },
   dropdownMenu: {
     backgroundColor: WHITE,
-    borderRadius: 16,
+    borderRadius: scaleWidth(16),
     width: width * 0.85,
-    maxHeight: 300,
-    padding: 8,
-    borderWidth: 1,
+    maxHeight: scaleHeight(300),
+    padding: scaleWidth(8),
+    borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -907,13 +917,14 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   dropdownItem: { 
-    padding: 14, 
-    borderBottomWidth: 1, 
+    padding: scaleHeight(14), 
+    borderBottomWidth: scaleWidth(1), 
     borderColor: BORDER_GREY,
     backgroundColor: WHITE,
   },
   dropdownItemText: { 
-    fontSize: 15, 
-    color: TEXT_DARK 
+    fontSize: scaleFont(15), 
+    color: NAVY_BLUE,
+    fontWeight: '600',
   },
 });

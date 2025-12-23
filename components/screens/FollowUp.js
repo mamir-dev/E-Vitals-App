@@ -345,15 +345,15 @@ const styles = StyleSheet.create({
     paddingTop: scaleHeight(20),
   },
   backButton: {
-  padding: 12, // Removed scaleWidth
+  padding: 6, 
   justifyContent: 'center',
   alignItems: 'left',
   minHeight: 55, // Removed scaleHeight
   minWidth: 55, // Removed scaleWidth
-},
+  },
   backButtonText: {
     fontSize: scaleFont(35),
-    color: WHITE,
+    color: 'white',
     fontWeight: '300',
   },
   // headerTitle: {
@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
   color: WHITE,
   textAlign: 'center',
   flex: 1,
-  marginLeft: scaleWidth(5),
+  marginLeft: scaleWidth(15),
   ...Platform.select({
     android: {
       includeFontPadding: false,
@@ -384,13 +384,14 @@ const styles = StyleSheet.create({
   },
 
   // --- Body Styles (Matching NotificationSettings) ---
-  bottomLightSection: {
+ bottomLightSection: {
     flex: 1,
-    backgroundColor: WHITE,
+    backgroundColor: 'white',
     borderTopLeftRadius: scaleWidth(35),
     borderTopRightRadius: scaleWidth(35),
-    marginTop: -scaleWidth(15),
+    marginTop: scaleWidth(-30),
     paddingTop: scaleWidth(20),
+    paddingHorizontal: scaleWidth(20),
   },
   keyboardContainer: {
     flex: 1,

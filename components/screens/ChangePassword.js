@@ -147,43 +147,44 @@ const styles = StyleSheet.create({
     paddingTop: scaleHeight(20),
   },
   backButton: {
-  padding: 12, // Removed scaleWidth
+  padding: 6, 
   justifyContent: 'center',
   alignItems: 'left',
   minHeight: 55, // Removed scaleHeight
   minWidth: 55, // Removed scaleWidth
-},
+  },
   backButtonText: {
     fontSize: scaleFont(35),
     color: 'white',
     fontWeight: '300',
   },
   headerTitle: {
-  fontSize: scaleFont(22),
-  fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
-  color: WHITE,
-  textAlign: 'center',
-  flex: 1,
-  marginLeft: scaleWidth(5),
-  ...Platform.select({
-    android: {
-      includeFontPadding: false,
-      fontFamily: 'sans-serif-condensed', // Android system font
+    fontSize: scaleFont(22),
+    fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
+    color: WHITE,
+    textAlign: 'center',
+    flex: 1,
+    marginLeft: scaleWidth(5),
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+        fontFamily: 'sans-serif-condensed', // Android system font
+      },
+    }),
     },
-  }),
-},
-  headerSpacer: {
-    width: scaleWidth(36),
-  },
+    headerSpacer: {
+      width: scaleWidth(36),
+    },
 
   // --- Body Styles ---
-  bottomLightSection: {
+   bottomLightSection: {
     flex: 1,
     backgroundColor: 'white',
     borderTopLeftRadius: scaleWidth(35),
     borderTopRightRadius: scaleWidth(35),
-    marginTop: -scaleWidth(15),
+    marginTop: scaleWidth(-30),
     paddingTop: scaleWidth(20),
+    paddingHorizontal: scaleWidth(20),
   },
   keyboardContainer: {
     flex: 1,

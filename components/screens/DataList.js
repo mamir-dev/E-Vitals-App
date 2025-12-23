@@ -14,9 +14,11 @@ import {
   Image,
   Dimensions,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LineChart } from 'react-native-chart-kit';
+import { colors, fonts } from '../../config/globall';
 
 const { width, height } = Dimensions.get('window');
 const guidelineBaseWidth = 375;
@@ -28,22 +30,11 @@ const scaleHeight = size => (height / guidelineBaseHeight) * size;
 const scaleFont = size => scaleWidth(size);
 
 /* ──────────────────────  COLORS  ────────────────────── */
-const NAVY_BLUE = '#11224D';
+const NAVY_BLUE = colors.primaryButton || '#11224D';
 const WHITE = '#FFFFFF';
 const LIGHT_GREY = '#F4F7F9';
 const BORDER_GREY = '#E0E0E0';
 const TEXT_LIGHT = '#666666';
-const colors = {
-  primary: NAVY_BLUE,
-  primaryLight: LIGHT_GREY,
-  text: '#1A1A1A',
-  textLight: TEXT_LIGHT,
-  border: BORDER_GREY,
-  background: '#F8FAFC',
-  white: WHITE,
-  danger: '#EF4444',
-  success: '#10B981',
-};
 
 /* ──────────────────────  DROPDOWN OPTIONS  ────────────────────── */
 const periodOptions = ['Last 7 days', 'Last 2 weeks', 'Last month', 'Last 3 months', 'Last 6 months', 'Last year', 'Custom range'];
@@ -282,7 +273,6 @@ const DataList = ({ navigation, route }) => {
       {/* <StatusBar backgroundColor={NAVY_BLUE} barStyle="light-content" /> */}
       <StatusBar barStyle="default" />
 
-
       {/* Main Container with Navy Blue Background */}
       <View style={styles.mainContainer}>
         {/* Header - Navy Blue Bar */}
@@ -482,7 +472,7 @@ const styles = StyleSheet.create({
   // --- Header Styles ---
   topDarkSection: {
     backgroundColor: NAVY_BLUE,
-    height: scaleHeight(120),
+    height: scaleHeight(100),
     borderBottomLeftRadius: scaleWidth(35),
     borderBottomRightRadius: scaleWidth(35),
     paddingBottom: scaleHeight(10),
@@ -492,24 +482,33 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: scaleWidth(20),
-    paddingTop: scaleHeight(20),
+    paddingTop: scaleHeight(10),
   },
   backButton: {
-    padding: scaleWidth(8),
-    marginRight: scaleWidth(10),
+    padding: 10, 
+    justifyContent: 'center',
+    alignItems: 'left',
+    minHeight: 55,
+    minWidth: 55,
   },
   backButtonText: {
-    fontSize: scaleFont(28),
+    fontSize: scaleFont(35),
     color: 'white',
     fontWeight: '300',
   },
   headerTitle: {
-    fontSize: scaleFont(24),
-    fontWeight: '800',
-    color: 'white',
-    textAlign: 'left',
+    fontSize: scaleFont(22),
+    fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
+    color: WHITE,
+    textAlign: 'center',
     flex: 1,
     marginLeft: scaleWidth(5),
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+        fontFamily: 'sans-serif-condensed',
+      },
+    }),
   },
   headerSpacer: {
     width: scaleWidth(36),
@@ -521,134 +520,230 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: scaleWidth(35),
     borderTopRightRadius: scaleWidth(35),
-    marginTop: -scaleWidth(15),
+    marginTop: scaleWidth(-15),
     paddingTop: scaleWidth(20),
   },
 
   card: {
     backgroundColor: WHITE,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: BORDER_GREY,
+    borderRadius: scaleWidth(10),
+    padding: scaleWidth(16),
+    marginBottom: scaleHeight(16),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cardTitle: { 
-    fontSize: 17, 
-    fontWeight: '600', 
+    fontSize: scaleFont(18),
+    fontWeight: '700', 
     color: NAVY_BLUE, 
-    marginBottom: 12 
+    marginBottom: scaleHeight(12),
   },
-  subtitle: { fontSize: 13, color: TEXT_LIGHT, marginBottom: 12 },
+  subtitle: { 
+    fontSize: scaleFont(14), 
+    color: TEXT_LIGHT, 
+    marginBottom: scaleHeight(12) 
+  },
 
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, justifyContent: 'space-between' },
-  radio: { flexDirection: 'row', alignItems: 'center' },
+  row: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: scaleHeight(12), 
+    justifyContent: 'space-between' 
+  },
+  radio: { 
+    flexDirection: 'row', 
+    alignItems: 'center' 
+  },
   radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
+    width: scaleWidth(20),
+    height: scaleWidth(20),
+    borderRadius: scaleWidth(10),
+    borderWidth: scaleWidth(2),
     borderColor: NAVY_BLUE,
-    marginRight: 8,
+    marginRight: scaleWidth(8),
     justifyContent: 'center',
     alignItems: 'center',
   },
-  radioActive: { backgroundColor: NAVY_BLUE },
-  radioLabel: { fontSize: 14, color: colors.text },
+  radioActive: { 
+    backgroundColor: NAVY_BLUE 
+  },
+  radioLabel: { 
+    fontSize: scaleFont(14), 
+    color: colors.textSecondary || TEXT_LIGHT 
+  },
   dropdown: {
     flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: WHITE,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginLeft: 12,
-    borderWidth: 1,
+    paddingHorizontal: scaleWidth(12),
+    paddingVertical: scaleHeight(10),
+    borderRadius: scaleWidth(8),
+    marginLeft: scaleWidth(12),
+    borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
   },
-  disabled: { opacity: 0.5 },
-  dropdownText: { fontSize: 14, color: colors.text },
+  disabled: { 
+    opacity: 0.5 
+  },
+  dropdownText: { 
+    fontSize: scaleFont(14), 
+    color: NAVY_BLUE,
+    fontWeight: '600',
+  },
 
-  dateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  dateRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    marginBottom: scaleHeight(12) 
+  },
   dateInput: {
     flex: 1,
     backgroundColor: WHITE,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    fontSize: 14,
-    marginHorizontal: 4,
-    borderWidth: 1,
+    paddingHorizontal: scaleWidth(12),
+    paddingVertical: scaleHeight(10),
+    borderRadius: scaleWidth(8),
+    fontSize: scaleFont(14),
+    marginHorizontal: scaleWidth(4),
+    borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
-    color: colors.text,
+    color: NAVY_BLUE,
+    fontWeight: '600',
   },
-  to: { fontSize: 14, color: TEXT_LIGHT, marginHorizontal: 8 },
+  to: { 
+    fontSize: scaleFont(14), 
+    color: TEXT_LIGHT, 
+    marginHorizontal: scaleWidth(8) 
+  },
 
-  sortLabel: { fontSize: 14, color: colors.text, width: 100 },
+  sortLabel: { 
+    fontSize: scaleFont(14), 
+    color: colors.textSecondary || TEXT_LIGHT, 
+    width: scaleWidth(100) 
+  },
   queryBtn: {
     backgroundColor: NAVY_BLUE,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: scaleHeight(12),
+    borderRadius: scaleWidth(12),
     alignItems: 'center',
-    marginTop: 8,
-    borderWidth: 1,
+    marginTop: scaleHeight(8),
+    borderWidth: scaleWidth(1),
     borderColor: NAVY_BLUE,
   },
-  queryBtnText: { color: WHITE, fontWeight: '600', fontSize: 15 },
+  queryBtnText: { 
+    color: WHITE, 
+    fontWeight: '600', 
+    fontSize: scaleFont(15) 
+  },
 
-  chart: { borderRadius: 12, marginVertical: 8 },
-  legend: { flexDirection: 'row', justifyContent: 'center', marginTop: 8 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 12 },
-  legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
-  legendText: { fontSize: 12, color: TEXT_LIGHT },
+  chart: { 
+    borderRadius: scaleWidth(12), 
+    marginVertical: scaleHeight(8) 
+  },
+  legend: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    marginTop: scaleHeight(8) 
+  },
+  legendItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginHorizontal: scaleWidth(12) 
+  },
+  legendDot: { 
+    width: scaleWidth(10), 
+    height: scaleWidth(10), 
+    borderRadius: scaleWidth(5), 
+    marginRight: scaleWidth(6) 
+  },
+  legendText: { 
+    fontSize: scaleFont(12), 
+    color: TEXT_LIGHT 
+  },
 
   table: { 
-    borderWidth: 1, 
+    borderWidth: scaleWidth(1), 
     borderColor: BORDER_GREY, 
-    borderRadius: 12, 
+    borderRadius: scaleWidth(12), 
     overflow: 'hidden',
     backgroundColor: WHITE,
   },
   tableHeader: { 
     flexDirection: 'row', 
     backgroundColor: LIGHT_GREY, 
-    paddingVertical: 10,
-    borderBottomWidth: 1,
+    paddingVertical: scaleHeight(10),
+    borderBottomWidth: scaleWidth(1),
     borderBottomColor: BORDER_GREY,
   },
   tableRow: { 
     flexDirection: 'row', 
-    paddingVertical: 12, 
-    borderBottomWidth: 1, 
+    paddingVertical: scaleHeight(12), 
+    borderBottomWidth: scaleWidth(1), 
     borderColor: BORDER_GREY,
     backgroundColor: WHITE,
   },
-  th: { fontWeight: '600', fontSize: 12, color: NAVY_BLUE },
-  td: { fontSize: 13, color: colors.text },
-  colDate: { width: '22%', paddingLeft: 12 },
-  colTime: { width: '22%', textAlign: 'center' },
-  colValue: { width: '18%', textAlign: 'center' },
-  colUnit: { width: '18%', textAlign: 'center' },
-  danger: { color: colors.danger, fontWeight: '600' },
+  th: { 
+    fontWeight: '600', 
+    fontSize: scaleFont(12), 
+    color: NAVY_BLUE 
+  },
+  td: { 
+    fontSize: scaleFont(13), 
+    color: NAVY_BLUE,
+    fontWeight: '600',
+  },
+  colDate: { 
+    width: '22%', 
+    paddingLeft: scaleWidth(12) 
+  },
+  colTime: { 
+    width: '22%', 
+    textAlign: 'center' 
+  },
+  colValue: { 
+    width: '18%', 
+    textAlign: 'center' 
+  },
+  colUnit: { 
+    width: '18%', 
+    textAlign: 'center' 
+  },
+  danger: { 
+    color: '#EF4444', 
+    fontWeight: '600' 
+  },
 
-  emptyText: { textAlign: 'center', color: TEXT_LIGHT, fontSize: 15, marginVertical: 20 },
-  errorText: { textAlign: 'center', color: colors.danger, fontSize: 14, marginVertical: 20 },
+  emptyText: { 
+    textAlign: 'center', 
+    color: TEXT_LIGHT, 
+    fontSize: scaleFont(15), 
+    marginVertical: scaleHeight(20) 
+  },
+  errorText: { 
+    textAlign: 'center', 
+    color: '#EF4444', 
+    fontSize: scaleFont(14), 
+    marginVertical: scaleHeight(20) 
+  },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.5)', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
   dropdownMenu: {
     backgroundColor: WHITE,
-    borderRadius: 16,
+    borderRadius: scaleWidth(16),
     width: width * 0.85,
-    maxHeight: 300,
-    padding: 8,
-    borderWidth: 1,
+    maxHeight: scaleHeight(300),
+    padding: scaleWidth(8),
+    borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -657,12 +752,16 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   dropdownItem: { 
-    padding: 14, 
-    borderBottomWidth: 1, 
+    padding: scaleHeight(14), 
+    borderBottomWidth: scaleWidth(1), 
     borderColor: BORDER_GREY,
     backgroundColor: WHITE,
   },
-  dropdownItemText: { fontSize: 15, color: colors.text },
+  dropdownItemText: { 
+    fontSize: scaleFont(15), 
+    color: NAVY_BLUE,
+    fontWeight: '600',
+  },
 });
 
 export default DataList;

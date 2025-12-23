@@ -3,57 +3,58 @@ import { View, StyleSheet, Dimensions, Image, Text } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 
-// Get screen dimensions
 const { width, height } = Dimensions.get('window');
 
-// --- Color Configuration ---
 const WHITE_COLOR = '#FFFFFF';
-const NAVY_BLUE_COLOR = '#11224D'; 
+const NAVY_BLUE_COLOR = '#11224D';
 
-// --- Curve Geometry Configuration ---
-const CURVE_HEIGHT = 220;   // INCREASED: from 180 to 220 (taller wave area)
-const WAVE_START_Y = 80;    // Y-coordinate where the curve starts and ends
-const DIP_Y = 200;          // INCREASED: from 160 to 200 (deeper dip for taller wave)
+// Base values from original design for 375 width (typical)
+// We'll scale based on screen width, but keep aspect ratios consistent
+const BASE_SCREEN_WIDTH = 375;
+const BASE_CURVE_HEIGHT = 220;
+const BASE_WAVE_START_Y = 80;
+const BASE_DIP_Y = 200;
+
+// Scale factor based on current width
+const scale = width / BASE_SCREEN_WIDTH;
+
+// Scaled values for the wave
+const CURVE_HEIGHT = BASE_CURVE_HEIGHT * scale;
+const WAVE_START_Y = BASE_WAVE_START_Y * scale;
+const DIP_Y = BASE_DIP_Y * scale;
 
 const SplashScreen = () => {
   const navigation = useNavigation();
 
   useEffect(() => {
-    // Timer to automatically navigate away after 3 seconds
-    const timer = setTimeout(async () => {
-      // NOTE: Make sure 'Login' is a valid screen name in your navigator.
+    const timer = setTimeout(() => {
       navigation.replace('Login');
-    }, 6000); // 5 seconds delay
+    }, 6000);
 
     return () => clearTimeout(timer);
   }, [navigation]);
 
   return (
     <View style={styles.container}>
-      {/* Logo and App Name at the Top */}
+      {/* Logo and texts */}
       <View style={styles.headerContainer}>
-        {/* Logo */}
-        <View style={styles.logoContainer}>
-          <Image
-            source={require('../../android/app/src/assets/images/logo5.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </View>
-        
-        {/* App Name and Tagline */}
-        <View style={styles.appInfoContainer}>
-          <Text style={styles.appTagline}>Your Health, Your Records, Your Control</Text>
-          <Text style={styles.appDescription}>
-            Secure digital health records at your fingertips
-          </Text>
-        </View>
+        <Image
+          source={require('../../android/app/src/assets/images/logo5.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <Text style={styles.appTagline}>
+          Your Health, Your Records, Your Control
+        </Text>
+        <Text style={styles.appDescription}>
+          Secure digital health records at your fingertips
+        </Text>
       </View>
 
-      {/* 1. White Top Section: The background color above the wave */}
+      {/* White background top half */}
       <View style={styles.whiteSection} />
-      
-      {/* 2. SVG Curve: Renders the wave shape */}
+
+      {/* SVG Wave */}
       <View style={styles.curveContainer}>
         <Svg height={CURVE_HEIGHT} width={width} style={styles.svg}>
           <Path
@@ -68,13 +69,12 @@ const SplashScreen = () => {
           />
         </Svg>
       </View>
-      
-      {/* 3. Navy Blue Bottom Section: The background color below the wave */}
+
+      {/* Navy blue bottom area with more height to not cut feet */}
       <View style={styles.navySection} />
-      
-      {/* 4. Illustration: Absolutely positioned and centered over the wave area */}
+
+      {/* Illustration with oval shadow */}
       <View style={styles.illustrationContainer}>
-        {/* White Oval Floor under the characters */}
         <View style={styles.ovalFloor} />
         <Image
           source={require('../../android/app/src/assets/images/illustration-img.png')}
@@ -88,52 +88,44 @@ const SplashScreen = () => {
 
 export default SplashScreen;
 
-// --- Stylesheet ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: WHITE_COLOR,
   },
-  
-  // Header with Logo and App Name - Adjusted to match login screen
+
   headerContainer: {
     position: 'absolute',
-    top: 40, 
+    top: height * 0.05,
     left: 0,
     right: 0,
     alignItems: 'center',
     zIndex: 30,
-    paddingHorizontal: 20,
+    paddingHorizontal: width * 0.05,
   },
-  logoContainer: {
-    marginBottom: 5, // Reduced to match login screen spacing
-    alignItems: 'center',
-  },
+
   logo: {
-    width: 160, // Match login screen width: responsiveScale(160, 140, 180)
-    height: 140, // Match login screen height: responsiveScale(140, 120, 160)
-    resizeMode: 'contain', // Same as login screen
+    width: 160 * scale,       // scale based on width
+    height: 140 * scale,
+    marginBottom: 8 * scale,
   },
-  appInfoContainer: {
-    alignItems: 'center',
-    marginTop: 5,
-  },
+
   appTagline: {
-    fontSize: 18,
+    fontSize: 18 * scale,
     color: NAVY_BLUE_COLOR,
-    marginBottom: 5,
-    textAlign: 'center',
+    marginBottom: 6 * scale,
     fontWeight: '600',
+    textAlign: 'center',
   },
+
   appDescription: {
-    fontSize: 14,
+    fontSize: 14 * scale,
     color: '#555',
     textAlign: 'center',
     maxWidth: '80%',
-    lineHeight: 20,
+    lineHeight: 20 * scale,
   },
-  
-  // Section above the curve
+
   whiteSection: {
     position: 'absolute',
     top: 0,
@@ -142,8 +134,7 @@ const styles = StyleSheet.create({
     height: '50%',
     backgroundColor: WHITE_COLOR,
   },
-  
-  // SVG container for the wave
+
   curveContainer: {
     position: 'absolute',
     top: '50%',
@@ -152,23 +143,22 @@ const styles = StyleSheet.create({
     height: CURVE_HEIGHT,
     zIndex: 10,
   },
+
   svg: {
     position: 'absolute',
     top: 0,
   },
-  
-  // Section below the curve
+
   navySection: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: '20%',
+    height: '26%', // increased from 20% to 26% to avoid clipping feet
     backgroundColor: NAVY_BLUE_COLOR,
     zIndex: 1,
   },
-  
-  // Container to hold and center the image
+
   illustrationContainer: {
     position: 'absolute',
     top: '32%',
@@ -179,11 +169,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 20,
   },
-  
-  // Image styling
+
   illustration: {
-    width: width * 1.0,
-    height: CURVE_HEIGHT * 3.0,
+    width: width * 0.95,
+    height: CURVE_HEIGHT * 3,
     maxWidth: 500,
     maxHeight: 1400,
     shadowColor: '#000',
@@ -193,21 +182,17 @@ const styles = StyleSheet.create({
     elevation: 3,
     zIndex: 20,
   },
-  
-  // Oval floor with blur effect added
-ovalFloor: {
+
+  ovalFloor: {
     position: 'absolute',
-    bottom: '-7%',
+    bottom: '-6%',
     alignSelf: 'center',
     width: width * 0.88,
-    height: 20,
-    backgroundColor: '#e6e5e5ff',
+    height: 20 * scale,
+    backgroundColor: '#acacacff',
     borderRadius: 100,
-    zIndex: 5,
-    
-    // Removed all blur-related properties
-    // Kept only essential styling for the ellipse shape
     borderWidth: 1,
-    borderColor: '#ebebebff', // Slightly darker border for definition
+    borderColor: '#9c9b9bff',
+    zIndex: 5,
   },
 });

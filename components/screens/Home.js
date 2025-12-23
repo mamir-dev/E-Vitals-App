@@ -1,29 +1,271 @@
 /* eslint-disable react-native/no-inline-styles */
 import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, TouchableOpacity, StyleSheet, Image, Dimensions, StatusBar 
+  View, Text, TouchableOpacity, StyleSheet, Image, StatusBar, ScrollView 
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../config/globall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import { useWindowDimensions } from 'react-native';
 
-// Get current screen dimensions
-const { width, height } = Dimensions.get('window');
 // Base dimensions used for scaling calculations (standard phone size)
 const guidelineBaseWidth = 375;
 const guidelineBaseHeight = 812;
-
-// --- RESPONSIVE SCALING FUNCTIONS ---
-const scaleWidth = size => (width / guidelineBaseWidth) * size;
-const scaleHeight = size => (height / guidelineBaseHeight) * size;
-const scaleFont = size => scaleWidth(size);
-
-// Define the primary color
-const PRIMARY_ACCENT = colors.primaryButton || '#3498db';
 const SECONDARY_ACCENT = colors.secondaryButton || '#FF0000';
 
+// ==================== NOTIFICATION PROCESSING HELPERS ====================
+
+// Generate medical alerts with consistent IDs
+const generateMedicalAlerts = (patientData) => {
+  const alerts = [];
+  const measurements = patientData?.measurements || {};
+
+  // Blood Pressure Alerts
+  if (measurements.bloodPressure) {
+    const bp = measurements.bloodPressure;
+    const systolic = bp.systolic || bp.systolic_pressure;
+    const diastolic = bp.diastolic || bp.diastolic_pressure;
+
+    if (systolic > 140 || diastolic > 90) {
+      alerts.push({
+        id: `bp-high-${systolic}-${diastolic}`,
+        type: 'Alert',
+        title: 'High Blood Pressure',
+        message: `Your BP reading ${systolic}/${diastolic} mmHg is above normal range.`,
+        date: new Date().toISOString(),
+        read: false,
+        alertType: 'bloodPressure',
+        severity: systolic > 180 || diastolic > 120 ? 'high' : 'medium'
+      });
+    } else if (systolic < 90 || diastolic < 60) {
+      alerts.push({
+        id: `bp-low-${systolic}-${diastolic}`,
+        type: 'Alert',
+        title: 'Low Blood Pressure',
+        message: `Your BP reading ${systolic}/${diastolic} mmHg is below normal range.`,
+        date: new Date().toISOString(),
+        read: false,
+        alertType: 'bloodPressure',
+        severity: 'medium'
+      });
+    }
+  }
+
+  // Blood Glucose Alerts
+  if (measurements.bloodGlucose) {
+    const glucose = parseFloat(measurements.bloodGlucose.blood_glucose_value_1 || measurements.bloodGlucose.value || 0);
+    
+    if (glucose > 126) {
+      alerts.push({
+        id: `glucose-high-${glucose}`,
+        type: 'Alert',
+        title: 'High Blood Glucose',
+        message: `Your glucose level ${glucose} mg/dL indicates possible diabetes risk.`,
+        date: new Date().toISOString(),
+        read: false,
+        alertType: 'bloodGlucose',
+        severity: 'high'
+      });
+    } else if (glucose > 0 && glucose < 70) {
+      alerts.push({
+        id: `glucose-low-${glucose}`,
+        type: 'Alert',
+        title: 'Low Blood Glucose',
+        message: `Your glucose level ${glucose} mg/dL is below normal range.`,
+        date: new Date().toISOString(),
+        read: false,
+        alertType: 'bloodGlucose',
+        severity: 'medium'
+      });
+    }
+  }
+
+  // Weight Alerts
+  if (measurements.weight) {
+    const weight = measurements.weight.value;
+    const bmi = (weight / (1.7 * 1.7)).toFixed(1);
+    
+    if (bmi > 30) {
+      alerts.push({
+        id: `weight-high-${weight}`,
+        type: 'Alert',
+        title: 'Weight Concern',
+        message: `Your weight indicates obesity risk (BMI: ${bmi}). Consider lifestyle changes.`,
+        date: new Date().toISOString(),
+        read: false,
+        alertType: 'weight',
+        severity: 'medium'
+      });
+    } else if (bmi < 18.5) {
+      alerts.push({
+        id: `weight-low-${weight}`,
+        type: 'Alert',
+        title: 'Underweight Alert',
+        message: `Your weight indicates underweight condition (BMI: ${bmi}).`,
+        date: new Date().toISOString(),
+        read: false,
+        alertType: 'weight',
+        severity: 'medium'
+      });
+    }
+  }
+
+  return alerts;
+};
+
+// Helper: Load saved notifications
+const loadSavedNotifications = async () => {
+  try {
+    const savedData = await AsyncStorage.getItem('notificationsState');
+    if (savedData) {
+      return JSON.parse(savedData);
+    }
+  } catch (error) {
+    console.error("Error loading saved notifications:", error);
+  }
+  return null;
+};
+
+// Helper: Load stored assessments
+const loadStoredAssessments = async () => {
+  try {
+    const storedData = await AsyncStorage.getItem('storedAssessments');
+    if (storedData) {
+      return JSON.parse(storedData);
+    }
+  } catch (error) {
+    console.error("Error loading stored assessments:", error);
+  }
+  return [];
+};
+
+// Helper: Load system notifications
+const loadSystemNotifications = async () => {
+  try {
+    const systemData = await AsyncStorage.getItem('systemNotifications');
+    if (systemData) {
+      return JSON.parse(systemData);
+    }
+  } catch (error) {
+    console.error("Error loading system notifications:", error);
+  }
+  return [];
+};
+
+// Process and sync all notifications
+const processNotifications = async (patientData) => {
+  try {
+    console.log('🔄 Processing notifications in Home...');
+    
+    // Load existing data
+    const storedAssessments = await loadStoredAssessments();
+    const systemNotifications = await loadSystemNotifications();
+    const savedNotifications = await loadSavedNotifications();
+    
+    // Generate new alerts
+    const newAlerts = patientData ? generateMedicalAlerts(patientData) : [];
+    
+    // Use Map to ensure uniqueness
+    const notificationMap = new Map();
+    
+    // Add saved notifications first (preserve read status)
+    if (savedNotifications && savedNotifications.length > 0) {
+      savedNotifications.forEach(notif => {
+        notificationMap.set(notif.id, notif);
+      });
+    }
+    
+    // Process new alerts
+    newAlerts.forEach(newAlert => {
+      if (notificationMap.has(newAlert.id)) {
+        const existing = notificationMap.get(newAlert.id);
+        notificationMap.set(newAlert.id, {
+          ...newAlert,
+          read: existing.read
+        });
+      } else {
+        notificationMap.set(newAlert.id, newAlert);
+      }
+    });
+    
+    // Process assessments
+    storedAssessments.forEach(assessment => {
+      if (notificationMap.has(assessment.id)) {
+        const existing = notificationMap.get(assessment.id);
+        notificationMap.set(assessment.id, {
+          ...assessment,
+          read: existing.read
+        });
+      } else {
+        notificationMap.set(assessment.id, assessment);
+      }
+    });
+    
+    // Process system notifications
+    systemNotifications.forEach(sysNotif => {
+      if (notificationMap.has(sysNotif.id)) {
+        const existing = notificationMap.get(sysNotif.id);
+        notificationMap.set(sysNotif.id, {
+          ...sysNotif,
+          read: existing.read
+        });
+      } else {
+        notificationMap.set(sysNotif.id, sysNotif);
+      }
+    });
+    
+    // Clean up old notifications (older than 30 days)
+    const now = new Date();
+    const idsToRemove = [];
+    notificationMap.forEach((notif, id) => {
+      const notifDate = new Date(notif.date);
+      const daysDiff = (now - notifDate) / (1000 * 60 * 60 * 24);
+      if (daysDiff > 30) {
+        idsToRemove.push(id);
+      }
+    });
+    idsToRemove.forEach(id => notificationMap.delete(id));
+    
+    // Convert to array and sort
+    const finalNotifications = Array.from(notificationMap.values());
+    finalNotifications.sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    // Save state
+    await AsyncStorage.setItem('notificationsState', JSON.stringify(finalNotifications));
+    
+    // Update badge count
+    const unreadCount = finalNotifications.filter(n => !n.read).length;
+    await AsyncStorage.setItem('unreadBadgeCount', unreadCount.toString());
+    
+    console.log('✅ Notifications processed:', finalNotifications.length, 'Unread:', unreadCount);
+    return unreadCount;
+    
+  } catch (error) {
+    console.error('❌ Error processing notifications:', error);
+    return 0;
+  }
+};
+
+// ==================== END NOTIFICATION PROCESSING HELPERS ====================
+
 export default function Home({ navigation }) {
+  const { width, height } = useWindowDimensions();
+  
+  // Define scaling functions INSIDE the component to access width and height
+  const scaleWidth = size =>
+    Math.min((width / guidelineBaseWidth) * size, size * 1.25);
+
+  const scaleHeight = size =>
+    Math.min((height / guidelineBaseHeight) * size, size * 1.25);
+
+  const scaleFont = size =>
+    Math.min((width / guidelineBaseWidth) * size, size * 1.2);
+
+  // Define the primary color
+  const PRIMARY_ACCENT = colors.primaryButton || '#3498db';
+  const SECONDARY_ACCENT = colors.secondaryButton || '#FF0000';
+
   const [userName, setUserName] = useState("");
   const [greeting, setGreeting] = useState("Good Morning");
   const [unreadCount, setUnreadCount] = useState(0);
@@ -48,26 +290,26 @@ export default function Home({ navigation }) {
   };
 
   // Fetch unread notifications count - SIMPLIFIED VERSION
-const fetchUnreadCount = async () => {
-  try {
-    console.log('🔔 Fetching unread count...');
-    
-    // Get the badge count from AsyncStorage
-    const savedBadgeCount = await AsyncStorage.getItem('unreadBadgeCount');
-    
-    if (savedBadgeCount !== null) {
-      const count = parseInt(savedBadgeCount, 10);
-      console.log('📊 Badge count from storage:', count);
-      setUnreadCount(count);
-    } else {
-      console.log('⚠️ No badge count found, setting to 0');
+  const fetchUnreadCount = async () => {
+    try {
+      console.log('🔔 Fetching unread count...');
+      
+      // Get the badge count from AsyncStorage
+      const savedBadgeCount = await AsyncStorage.getItem('unreadBadgeCount');
+      
+      if (savedBadgeCount !== null) {
+        const count = parseInt(savedBadgeCount, 10);
+        console.log('📊 Badge count from storage:', count);
+        setUnreadCount(count);
+      } else {
+        console.log('⚠️ No badge count found, setting to 0');
+        setUnreadCount(0);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching unread count:', error);
       setUnreadCount(0);
     }
-  } catch (error) {
-    console.error('❌ Error fetching unread count:', error);
-    setUnreadCount(0);
-  }
-};
+  };
 
   // Function to fetch patient data from the API
   const fetchPatientData = async () => {
@@ -75,7 +317,7 @@ const fetchUnreadCount = async () => {
       const userData = await AsyncStorage.getItem('user');
       if (!userData) {
         console.error('User data not found in AsyncStorage');
-        return;
+        return null;
       }
   
       const user = JSON.parse(userData);
@@ -83,13 +325,13 @@ const fetchUnreadCount = async () => {
       
       if (!patientId) {
         console.error('Patient ID not found in user data');
-        return;
+        return null;
       }
   
       const token = await AsyncStorage.getItem('authToken');
       if (!token) {
         console.error('Auth token not found');
-        return;
+        return null;
       }
   
       const response = await fetch(`https://evitals.life/api/patients/${patientId}`, {
@@ -101,7 +343,7 @@ const fetchUnreadCount = async () => {
   
       if (!response.ok) {
         console.error(`Failed to fetch patient data: ${response.status} ${response.statusText}`);
-        return;
+        return null;
       }
   
       const result = await response.json();
@@ -194,55 +436,66 @@ const fetchUnreadCount = async () => {
   
         setMeasurements(processedMeasurements);
         console.log('Final measurements:', processedMeasurements);
+        
+        // Return the complete data object for notification processing
+        return { ...data, measurements: processedMeasurements };
       } else {
         console.error('API response indicates failure:', result);
+        return null;
       }
     } catch (error) {
       console.error('Failed to fetch patient data:', error);
+      return null;
     }
   };
 
   // Fetch patient data and load user name when the screen comes into focus
-useFocusEffect(
-  React.useCallback(() => {
-    const loadData = async () => {
-      try {
-        console.log('🏠 Home screen focused, loading data...');
-        setTimeBasedGreeting();
-        
-        // Load user name
-        const user = await AsyncStorage.getItem('user');
-        if (user) {
-          const parsed = JSON.parse(user);
-          const fullName = parsed.first_name && parsed.last_name
-            ? `${parsed.first_name} ${parsed.last_name}`
-            : parsed.name || parsed.username || '';
-          setUserName(fullName);
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadData = async () => {
+        try {
+          console.log('🏠 Home screen focused, loading data...');
+          setTimeBasedGreeting();
+          
+          // Load user name
+          const user = await AsyncStorage.getItem('user');
+          if (user) {
+            const parsed = JSON.parse(user);
+            const fullName = parsed.first_name && parsed.last_name
+              ? `${parsed.first_name} ${parsed.last_name}`
+              : parsed.name || parsed.username || '';
+            setUserName(fullName);
+          }
+          
+          // **CRITICAL FIX**: Fetch patient data FIRST
+          const patientData = await fetchPatientData();
+          
+          // **CRITICAL FIX**: Process notifications with fresh patient data
+          if (patientData) {
+            await processNotifications(patientData);
+          }
+          
+          // **CRITICAL FIX**: Now fetch badge count (it's been updated by processNotifications)
+          await fetchUnreadCount();
+          
+        } catch (e) {
+          console.error('❌ Error loading data:', e);
         }
-        
-        // Fetch patient data
-        await fetchPatientData();
-        
-        // Fetch badge count
+      };
+      
+      loadData();
+      
+      // Refresh badge count every 5 seconds while screen is focused
+      const intervalId = setInterval(async () => {
         await fetchUnreadCount();
-      } catch (e) {
-        console.error('❌ Error loading data:', e);
-      }
-    };
-    
-    loadData();
-    
-    // Refresh badge count every 5 seconds while screen is focused
-    const intervalId = setInterval(async () => {
-      await fetchUnreadCount();
-    }, 5000);
-    
-    // Cleanup interval on unmount
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [])
-);
+      }, 5000);
+      
+      // Cleanup interval on unmount
+      return () => {
+        clearInterval(intervalId);
+      };
+    }, [])
+  );
 
   // Navigation handlers
   const openSummary = (type) => navigation.navigate('Summary', { chartType: type });
@@ -307,44 +560,43 @@ useFocusEffect(
 
   // Render card with SWAPPED positions: "days ago" ABOVE, date/time BELOW
   const renderCard = (label, data, unit, openList, openSummary, type) => (
-    <View style={[styles.card, !data && { opacity: 0.5 }]}>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardHeaderLeft}>
-          <Text style={styles.cardLabel}>{label}</Text>
+    <View style={[styles(scaleWidth, scaleHeight, scaleFont).card, !data && { opacity: 0.5 }]}>
+      <View style={styles(scaleWidth, scaleHeight, scaleFont).cardHeader}>
+        <View style={styles(scaleWidth, scaleHeight, scaleFont).cardHeaderLeft}>
+          <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardLabel}>{label}</Text>
           
           {/* "Days ago" text ABOVE value (SWAPPED POSITION) */}
-          <Text style={styles.cardTimeAgo}>
+          <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardTimeAgo}>
             {data ? formatTimeAgo(data.measure_new_date_time) : 'No data available'}
           </Text>
         </View>
-        {/* REMOVED: <Text style={styles.chevron}>›</Text> */}
       </View>
       
-      <View style={styles.valueContainer}>
-        <Text style={styles.cardMainValue}>
+      <View style={styles(scaleWidth, scaleHeight, scaleFont).valueContainer}>
+        <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardMainValue}>
           {data?.value || data?.systolic_pressure || '--'}
-          {data?.diastolic_pressure && <Text style={styles.cardSlash}>/</Text>}
-          {data?.diastolic_pressure && <Text style={styles.cardSecondValue}>{data.diastolic_pressure}</Text>}
+          {data?.diastolic_pressure && <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardSlash}>/</Text>}
+          {data?.diastolic_pressure && <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardSecondValue}>{data.diastolic_pressure}</Text>}
         </Text>
       </View>
       
       {/* Real date and time BELOW value (SWAPPED POSITION) */}
-      <Text style={styles.cardDateTime}>
+      <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardDateTime}>
         {data ? formatDateTime(data.measure_new_date_time) : 'No data'}
       </Text>
 
       {/* Bottom section with UNIT on left and ICONS on right */}
-      <View style={styles.cardFooter}>
-        <Text style={styles.cardUnit}>{unit}</Text>
-        <View style={styles.cardActions}>
-          <TouchableOpacity style={styles.cardActionButton} disabled={!data} onPress={() => openList(type)}>
-            <View style={styles.listCircle}>
-              <Image source={require('../../android/app/src/assets/images/list-icon.png')} style={styles.listIcon} />
+      <View style={styles(scaleWidth, scaleHeight, scaleFont).cardFooter}>
+        <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardUnit}>{unit}</Text>
+        <View style={styles(scaleWidth, scaleHeight, scaleFont).cardActions}>
+          <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!data} onPress={() => openList(type)}>
+            <View style={styles(scaleWidth, scaleHeight, scaleFont).listCircle}>
+              <Image source={require('../../android/app/src/assets/images/list-icon.png')} style={styles(scaleWidth, scaleHeight, scaleFont).listIcon} />
             </View>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.cardActionButton} disabled={!data} onPress={() => openSummary(type)}>
-            <View style={[styles.chartCircle, { backgroundColor: PRIMARY_ACCENT }]}>
-              <Image source={require('../../android/app/src/assets/images/bar-chart.png')} style={styles.chartIcon} />
+          <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!data} onPress={() => openSummary(type)}>
+            <View style={[styles(scaleWidth, scaleHeight, scaleFont).chartCircle, { backgroundColor: PRIMARY_ACCENT }]}>
+              <Image source={require('../../android/app/src/assets/images/bar-chart.png')} style={styles(scaleWidth, scaleHeight, scaleFont).chartIcon} />
             </View>
           </TouchableOpacity>
         </View>
@@ -358,47 +610,46 @@ useFocusEffect(
       <StatusBar barStyle="light-content" backgroundColor={PRIMARY_ACCENT} />
 
       {/* Main container starts with the white background */}
-      <SafeAreaView style={styles.fullScreenContainer}>
-        <View style={styles.mainContainer}>
+      <SafeAreaView style={styles(scaleWidth, scaleHeight, scaleFont).fullScreenContainer}>
+        <View style={styles(scaleWidth, scaleHeight, scaleFont).mainContainer}>
           
           {/* Header Section with Blue Background and prominent Bottom Curves (Greeting Logic) */}
-          <View style={styles.blueHeaderContainer}>
-            <View style={styles.headerRow}>
-              <View style={styles.nameContainer}>
+          <View style={[styles(scaleWidth, scaleHeight, scaleFont).blueHeaderContainer, { backgroundColor: PRIMARY_ACCENT }]}>
+            <View style={styles(scaleWidth, scaleHeight, scaleFont).headerRow}>
+              <View style={styles(scaleWidth, scaleHeight, scaleFont).nameContainer}>
                 {/* Greeting + Hi Icon on same line */}
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {/* Text color changed to white for contrast on blue background */}
-                <Text style={[styles.greetingText, { color: 'white' }]}>{greeting}</Text>
-                <Image
-                  source={require('../../android/app/src/assets/images/hi.png')}
-                  // Tint color changed to white for contrast on blue background
-                  style={{ width: 40, height: 40, marginLeft: 2, tintColor: 'white' }}
-                  resizeMode="contain"
-                />
+                  <Text style={[styles(scaleWidth, scaleHeight, scaleFont).greetingText, { color: 'white' }]}>{greeting}</Text>
+                  <Image
+                    source={require('../../android/app/src/assets/images/hi.png')}
+                    style={{ width: 40, height: 40, marginLeft: 2, tintColor: 'white' }}
+                    resizeMode="contain"
+                  />
                 </View>
 
-                {/* Text color changed to white for contrast on blue background */}
-                <Text style={[styles.userName, { color: 'white' }]}>{userName}</Text>
+                {/* User name */}
+                <Text style={styles(scaleWidth, scaleHeight, scaleFont).userName} numberOfLines={1} ellipsizeMode="tail">
+                  {userName}
+                </Text>
               </View>
 
               {/* Notification Icon */}
               <TouchableOpacity 
-                style={styles.notificationIcon} 
+                style={styles(scaleWidth, scaleHeight, scaleFont).notificationIcon} 
                 onPress={openNotifications}
                 activeOpacity={0.7}
               >
-                <View style={styles.notificationIconContainer}>
+                <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationIconContainer}>
                   <Image 
                     source={require('../../android/app/src/assets/images/bell.png')} 
-                    // Tint color changed to white for contrast on blue background
-                    style={[styles.notificationImage, { tintColor: 'white' }]} 
+                    style={[styles(scaleWidth, scaleHeight, scaleFont).notificationImage, { tintColor: 'white' }]} 
                     resizeMode="contain" 
                   />
                   
                   {/* Dynamic Notification Badge */}
                   {unreadCount > 0 && (
-                    <View style={styles.notificationBadge}>
-                      <Text style={styles.notificationBadgeText}>
+                    <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadge}>
+                      <Text style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadgeText}>
                         {unreadCount > 9 ? '9+' : unreadCount}
                       </Text>
                     </View>
@@ -409,19 +660,22 @@ useFocusEffect(
           </View>
           
           {/* Last Upload Data (Outside the blue background) */}
-          <View style={styles.sectionTitleContainer}>
-            <Text style={styles.sectionTitle}>Last Upload Data</Text>
+          <View style={styles(scaleWidth, scaleHeight, scaleFont).sectionTitleContainer}>
+            <Text style={styles(scaleWidth, scaleHeight, scaleFont).sectionTitle}>Last Upload Data</Text>
           </View>
 
-
           {/* Cards Section */}
-          <View style={styles.cardsSection}>
-            <View style={styles.dataCardsContainer}>
+          <ScrollView
+            style={styles(scaleWidth, scaleHeight, scaleFont).cardsSection}
+            contentContainerStyle={{ paddingBottom: scaleHeight(20) }}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles(scaleWidth, scaleHeight, scaleFont).dataCardsContainer}>
               {renderCard('Blood Pressure (bpm)', measurements.bloodPressure, 'mmHg', openList, openSummary, 'bloodPressure')}
               {renderCard('Blood Glucose (bg)', measurements.bloodGlucose, 'mg/dl', openList, openSummary, 'bloodGlucose')}
               {renderCard('Weight (wt)', measurements.weight, 'lb', openList, openSummary, 'weight')}
             </View>
-          </View>
+          </ScrollView>
         </View>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -429,47 +683,28 @@ useFocusEffect(
 }
 
 // --- Style Sheet ---
-const styles = StyleSheet.create({
+const styles = (scaleWidth, scaleHeight, scaleFont) => StyleSheet.create({
   fullScreenContainer: {
     flex: 1,
-    backgroundColor: 'white', // Ensure the background under the card section is white
+    backgroundColor: 'white',
   },
   mainContainer: {
     flex: 1,
   },
-
-  // NEW STYLE for the curved blue header (only includes greeting/notification)
   blueHeaderContainer: {
-    backgroundColor: PRIMARY_ACCENT,
-    // Increased radius for a more prominent, smooth curve like the reference image
-    // borderBottomLeftRadius: scaleWidth(20), 
-    // borderBottomRightRadius: scaleWidth(20),
-    paddingTop: scaleHeight(20),
+    paddingTop: scaleHeight(10),
     paddingHorizontal: scaleWidth(20),
-    paddingBottom: scaleHeight(30), // Increased bottom padding to accommodate the larger curve
+    paddingBottom: scaleHeight(30),
   },
-  
-  // Container for the title outside the blue header
-  // sectionTitleContainer: {
-  //   backgroundColor: 'white', // Explicitly white background
-  //   paddingHorizontal: scaleWidth(20),
-  //   // Use negative margin to visually position the title correctly relative to the curve
-  //   marginTop: scaleHeight(-20), 
-  //   paddingTop: scaleHeight(15),
-  //   paddingBottom: scaleHeight(5),
-  // },
   sectionTitleContainer: {
-  backgroundColor: 'white',
-  paddingHorizontal: scaleWidth(20),
-  marginTop: scaleHeight(-20),
-  paddingTop: scaleHeight(15),
-  paddingBottom: scaleHeight(5),
-
-  //  ADD THESE
-  borderTopLeftRadius: scaleWidth(25),
-  borderTopRightRadius: scaleWidth(25),
-},
-
+    backgroundColor: 'white',
+    paddingHorizontal: scaleWidth(20),
+    marginTop: scaleHeight(-20),
+    paddingTop: scaleHeight(15),
+    paddingBottom: scaleHeight(5),
+    borderTopLeftRadius: scaleWidth(25),
+    borderTopRightRadius: scaleWidth(25),
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -487,6 +722,7 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: scaleFont(18),
     fontWeight: '600',
+    color: 'white',
   },
   notificationIcon: {
     justifyContent: 'center',
@@ -530,8 +766,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
   },
-
-  // Cards section
   cardsSection: {
     flex: 1,
     backgroundColor: 'white',
@@ -541,13 +775,11 @@ const styles = StyleSheet.create({
   dataCardsContainer: {
     flex: 1,
   },
-
-  // ======== CARD (SLIGHTLY SMALLER) ========
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(10),   // Slightly reduced
-    paddingHorizontal: scaleWidth(14),  // Slightly reduced
+    paddingVertical: scaleHeight(10),
+    paddingHorizontal: scaleWidth(14),
     marginBottom: scaleHeight(18),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -556,9 +788,11 @@ const styles = StyleSheet.create({
     elevation: 3,
     borderWidth: 1,
     borderColor: '#F0F0F0',
-    minHeight: scaleHeight(110),        // Slightly smaller
+    minHeight: scaleHeight(110),
+    maxWidth: 500,
+    alignSelf: 'center',
+    width: '100%',
   },
-
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -579,14 +813,11 @@ const styles = StyleSheet.create({
     color: '#999999',
     marginBottom: scaleHeight(5),
   },
-
   valueContainer: {
     marginBottom: scaleHeight(4),
   },
-
-  // Main BP / Glucose / Weight values
   cardMainValue: {
-    fontSize: scaleFont(26),     // Slightly reduced
+    fontSize: scaleFont(26),
     fontWeight: '700',
     color: '#11224D',
     lineHeight: scaleFont(30),
@@ -601,14 +832,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#11224D',
   },
-
-  // Date under value
   cardDateTime: {
     fontSize: scaleFont(10),
     color: '#999999',
   },
-
-  // Footer — Unit + Icons
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -629,19 +856,16 @@ const styles = StyleSheet.create({
   cardActionButton: {
     marginLeft: scaleWidth(8),
   },
-
-  // Icons slightly smaller
   chartCircle: {
-    width: scaleWidth(30),     
+    width: scaleWidth(30),
     height: scaleWidth(30),
     borderRadius: scaleWidth(15),
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 3,
-    backgroundColor: PRIMARY_ACCENT,
   },
   chartIcon: {
-    width: scaleWidth(14),     // 15 → 14
+    width: scaleWidth(14),
     height: scaleWidth(14),
     tintColor: colors.textWhite,
   },

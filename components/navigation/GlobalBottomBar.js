@@ -42,16 +42,18 @@ const Tab = createBottomTabNavigator();
 export default function GlobalBottomBar({ navigation }) {
   return (
     <Tab.Navigator
-      initialRouteName="Home" // Set Home as the initial active tab
+      initialRouteName="Home"
       screenOptions={({ route }) => ({
         headerShown: false, 
         tabBarStyle: styles.tabBar,
         tabBarHideOnKeyboard: true,
         tabBarShowLabel: true,
+        tabBarActiveTintColor: colors.primaryButton,
+        tabBarInactiveTintColor: colors.inactive,
+        tabBarLabelStyle: styles.tabBarLabel,
 
         tabBarIcon: ({ focused }) => {
           let iconSource;
-          let iconSize = scaleWidth(22); // Same size for all icons
 
           // Load icons based on the route name
           if (route.name === 'Home') {
@@ -66,38 +68,26 @@ export default function GlobalBottomBar({ navigation }) {
             iconSource = require('../../android/app/src/assets/images/settings.png');
           }
 
+          // Return ONLY the icon with background, not wrapped in extra View
           return (
-            <View style={styles.iconColumn}>
-              <View style={[
-                styles.iconContainer,
-                focused && styles.activeIconBackground,
-              ]}>
-                <Image
-                  source={iconSource}
-                  style={{
-                    ...styles.icon,
-                    tintColor: focused ? colors.background : colors.inactive,
-                    width: iconSize,
-                    height: iconSize,
-                  }}
-                  resizeMode="contain"
-                />
-              </View>
+            <View style={[
+              styles.iconContainer,
+              focused && styles.activeIconBackground,
+            ]}>
+              <Image
+                source={iconSource}
+                style={[
+                  styles.icon,
+                  { tintColor: focused ? colors.background : colors.inactive }
+                ]}
+                resizeMode="contain"
+              />
             </View>
           );
         },
-
-        tabBarLabel: ({ focused }) => (
-          <Text 
-            style={[styles.label, 
-              { color: focused ? colors.primaryButton : colors.inactive }
-            ]}>
-            {route.name}
-          </Text>
-        ),
       })}
     >
-      {/* Tab Screens - All tabs now have the same alignment and size */}
+      {/* Tab Screens */}
       <Tab.Screen name="Profile" component={ProfileScreen} />
       <Tab.Screen name="Appointment" component={Appointment} />
       <Tab.Screen name="Home" component={Home} />
@@ -111,39 +101,38 @@ export default function GlobalBottomBar({ navigation }) {
 const styles = StyleSheet.create({
   // Style for the main tab bar container
   tabBar: {
-    height: Platform.select({ ios: scaleHeight(95), android: scaleHeight(85) }),
-    paddingBottom: Platform.select({ ios: scaleHeight(12), android: scaleHeight(10) }),
-    paddingTop: scaleHeight(8),
+    height: Platform.select({ 
+      ios: scaleHeight(85),
+      android: scaleHeight(75)
+    }),
+    paddingBottom: Platform.select({ 
+      ios: scaleHeight(10),
+      android: scaleHeight(8)
+    }),
+    paddingTop: scaleHeight(5),
     backgroundColor: colors.background,
     elevation: 16,
     shadowColor: colors.shadow,
     shadowOpacity: 0.2,
     shadowRadius: 8,
     borderTopWidth: 0,
-    position: 'relative',
-  },
-  
-  // Style for each tab item (ensures even spacing)
-  tabBarItem: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    maxWidth: width / 5,
   },
 
-  // Column layout for icon and text within the tab
-  iconColumn: { 
-    alignItems: 'center', 
-    justifyContent: 'center' 
+  // Label styling - will be applied to ALL tabs
+  tabBarLabel: {
+    fontSize: scaleFont(9.85),
+    fontWeight: 'bold',
+    marginTop: scaleHeight(4),
   },
 
-  // Background container for the icon - same for all tabs
+  // Background container for the icon
   iconContainer: { 
     alignItems: 'center', 
     justifyContent: 'center', 
-    width: scaleWidth(42), 
-    height: scaleWidth(42), 
-    borderRadius: scaleWidth(21),
+    width: scaleWidth(40), 
+    height: scaleWidth(40), 
+    borderRadius: scaleWidth(20),
+    marginBottom: scaleHeight(2),
   },
 
   // Blue background when a tab is active/focused
@@ -155,12 +144,5 @@ const styles = StyleSheet.create({
   icon: { 
     width: scaleWidth(22), 
     height: scaleWidth(22) 
-  },
-
-  // Label text styling - made smaller
-  label: { 
-    fontSize: scaleFont(9.85), // Reduced from 10 to 9
-     fontWeight: 'bold',
-    marginTop: scaleHeight(10.5),
   },
 });

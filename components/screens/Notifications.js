@@ -7,11 +7,14 @@ import {
   FlatList,
   Dimensions,
   StatusBar,
+  Image,
+  Platform,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../../config/globall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 
 const { width, height } = Dimensions.get('window');
 const guidelineBaseWidth = 375;
@@ -216,9 +219,9 @@ const NotificationItem = React.memo(({ item, onPress, onMarkAsRead }) => (
 // Main Notifications Component
 export default function Notifications({ navigation }) {
   const [activeFilter, setActiveFilter] = useState('All');
-  const [showDateFilter, setShowDateFilter] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [markAllPressed, setMarkAllPressed] = useState(false);
 
   // Save notifications to AsyncStorage
   const saveNotificationsState = async (notificationsList) => {
@@ -252,116 +255,56 @@ export default function Notifications({ navigation }) {
     console.log('🔔 Updated badge count:', unreadCount);
   };
 
-  // Load notifications with proper merging logic (FIXED - No Duplicates)
+  // SIMPLIFIED: Load notifications from storage (processing happens in Home.js)
   const loadRealNotifications = async () => {
     try {
       setLoading(true);
       
-      // Fetch fresh data
-      const patientData = await fetchPatientDataForAlerts();
-      const storedAssessments = await loadStoredAssessments();
-      const systemNotifications = await loadSystemNotifications();
-      
-      // Generate new alerts from API
-      const newAlerts = patientData ? generateMedicalAlerts(patientData) : [];
-      
-      // Load saved notifications
+      // First, try to load from storage
       const savedNotifications = await loadSavedNotifications();
-
-      // Use a Map to ensure unique notifications by ID
-      const notificationMap = new Map();
       
-      // STEP 1: Add all saved notifications first (preserve their read status)
       if (savedNotifications && savedNotifications.length > 0) {
-        console.log('📖 Found saved notifications:', savedNotifications.length);
-        savedNotifications.forEach(notif => {
-          notificationMap.set(notif.id, notif);
-        });
-      }
-      
-      // STEP 2: Process new alerts - only add if not already in map
-      console.log('🔍 Processing new alerts:', newAlerts.length);
-      newAlerts.forEach(newAlert => {
-        if (notificationMap.has(newAlert.id)) {
-          // Alert already exists, update it but keep read status
-          const existing = notificationMap.get(newAlert.id);
-          notificationMap.set(newAlert.id, {
-            ...newAlert,
-            read: existing.read
-          });
-          console.log('♻️ Updated existing alert:', newAlert.id);
-        } else {
-          // New alert, add it
+        console.log('📖 Loaded notifications from storage:', savedNotifications.length);
+        savedNotifications.sort((a, b) => new Date(b.date) - new Date(a.date));
+        setNotifications(savedNotifications);
+      } else {
+        // If no saved data, fetch fresh data and process
+        console.log('⚠️ No saved notifications, fetching fresh data...');
+        const patientData = await fetchPatientDataForAlerts();
+        const storedAssessments = await loadStoredAssessments();
+        const systemNotifications = await loadSystemNotifications();
+        
+        const newAlerts = patientData ? generateMedicalAlerts(patientData) : [];
+        
+        const notificationMap = new Map();
+        
+        // Process new alerts
+        newAlerts.forEach(newAlert => {
           notificationMap.set(newAlert.id, newAlert);
-          console.log('✨ Added new alert:', newAlert.id);
-        }
-      });
-      
-      // STEP 3: Process stored assessments - only add if not already in map
-      console.log('🔍 Processing assessments:', storedAssessments.length);
-      storedAssessments.forEach(assessment => {
-        if (notificationMap.has(assessment.id)) {
-          // Assessment already exists, keep the existing one
-          const existing = notificationMap.get(assessment.id);
-          notificationMap.set(assessment.id, {
-            ...assessment,
-            read: existing.read
-          });
-          console.log('♻️ Updated existing assessment:', assessment.id);
-        } else {
-          // New assessment, add it
-          notificationMap.set(assessment.id, assessment);
-          console.log('✨ Added new assessment:', assessment.id);
-        }
-      });
-      
-      // STEP 4: Process system notifications - only add if not already in map
-      console.log('🔍 Processing system notifications:', systemNotifications.length);
-      systemNotifications.forEach(sysNotif => {
-        if (notificationMap.has(sysNotif.id)) {
-          // System notification already exists, preserve read status
-          const existing = notificationMap.get(sysNotif.id);
-          notificationMap.set(sysNotif.id, {
-            ...sysNotif,
-            read: existing.read
-          });
-          console.log('♻️ Updated existing system notification:', sysNotif.id);
-        } else {
-          // New system notification, add it
-          notificationMap.set(sysNotif.id, sysNotif);
-          console.log('✨ Added new system notification:', sysNotif.id);
-        }
-      });
-      
-      // STEP 5: Clean up old notifications (older than 30 days)
-      const now = new Date();
-      const idsToRemove = [];
-      notificationMap.forEach((notif, id) => {
-        const notifDate = new Date(notif.date);
-        const daysDiff = (now - notifDate) / (1000 * 60 * 60 * 24);
-        if (daysDiff > 30) {
-          idsToRemove.push(id);
-        }
-      });
-      idsToRemove.forEach(id => notificationMap.delete(id));
-      if (idsToRemove.length > 0) {
-        console.log('🗑️ Removed old notifications:', idsToRemove.length);
+        });
+        
+        // Process assessments
+        storedAssessments.forEach(assessment => {
+          if (!notificationMap.has(assessment.id)) {
+            notificationMap.set(assessment.id, assessment);
+          }
+        });
+        
+        // Process system notifications
+        systemNotifications.forEach(sysNotif => {
+          if (!notificationMap.has(sysNotif.id)) {
+            notificationMap.set(sysNotif.id, sysNotif);
+          }
+        });
+        
+        const finalNotifications = Array.from(notificationMap.values());
+        finalNotifications.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        await saveNotificationsState(finalNotifications);
+        await updateBadgeCount(finalNotifications);
+        
+        setNotifications(finalNotifications);
       }
-      
-      // STEP 6: Convert Map to array (Map ensures uniqueness)
-      const finalNotifications = Array.from(notificationMap.values());
-      
-      // STEP 7: Sort by date (newest first)
-      finalNotifications.sort((a, b) => new Date(b.date) - new Date(a.date));
-      
-      console.log('✅ Final unique notifications:', finalNotifications.length);
-      console.log('📋 Notification IDs:', finalNotifications.map(n => n.id));
-      
-      // Save state
-      await saveNotificationsState(finalNotifications);
-      await updateBadgeCount(finalNotifications);
-      
-      setNotifications(finalNotifications);
       
     } catch (error) {
       console.error('❌ Error loading notifications:', error);
@@ -374,6 +317,7 @@ export default function Notifications({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       loadRealNotifications();
+      setMarkAllPressed(false);
     }, [])
   );
 
@@ -394,6 +338,8 @@ export default function Notifications({ navigation }) {
 
   // Mark all as read
   const handleMarkAllAsRead = async () => {
+    setMarkAllPressed(true);
+    
     const updatedNotifications = notifications.map(notification => ({
       ...notification,
       read: true
@@ -404,6 +350,10 @@ export default function Notifications({ navigation }) {
     await updateBadgeCount(updatedNotifications);
     
     console.log('✅ All notifications marked as read');
+    
+    setTimeout(() => {
+      setMarkAllPressed(false);
+    }, 300);
   };
 
   // Handle notification press
@@ -421,9 +371,7 @@ export default function Notifications({ navigation }) {
       return;
     }
 
-    // Handle System type notifications
     if (notification.type === 'System') {
-      // You can add custom navigation or actions for system notifications here
       console.log('System notification clicked:', notification.id);
       return;
     }
@@ -438,11 +386,8 @@ export default function Notifications({ navigation }) {
 
   // Generate notification types with System and Alert always included (no Store)
   const uniqueTypes = [...new Set(notifications.map(n => n.type))];
-  
-  // Always include System and Alert as base types even if empty (Store removed)
   const baseTypes = ['Alert', 'System'];
   const allTypes = [...new Set([...baseTypes, ...uniqueTypes])].filter(type => type !== 'Store');
-  
   const notificationTypes = ['All', 'Unread', ...allTypes];
 
   const renderItem = useCallback(({ item }) => (
@@ -451,7 +396,7 @@ export default function Notifications({ navigation }) {
       onPress={handleNotificationPress}
       onMarkAsRead={handleMarkAsRead}
     />
-  ), []);
+  ), [notifications]);
 
   return (
     <SafeAreaProvider>
@@ -468,56 +413,21 @@ export default function Notifications({ navigation }) {
                 <Text style={styles.backButtonText}>‹</Text>
               </TouchableOpacity>
 
-              <Text style={styles.screenTitle}>Medical Alerts</Text>
+              <Text style={styles.headerTitle}>Medical Alerts</Text>
 
-              <View style={styles.rightButtonsContainer}>
-                {notifications.some(n => !n.read) && (
-                  <TouchableOpacity 
-                    style={styles.markAllReadButton}
-                    onPress={handleMarkAllAsRead}
-                  >
-                    <Text style={styles.markAllReadText}>Mark all read</Text>
-                  </TouchableOpacity>
-                )}
-                
-                <View style={styles.filterContainer}>
-                  <TouchableOpacity 
-                    style={styles.filterIconButton}
-                    onPress={() => setShowDateFilter(!showDateFilter)}
-                  >
-                    <Text style={styles.filterIcon}>▼</Text>
-                  </TouchableOpacity>
-                  
-                  {showDateFilter && (
-                    <View style={styles.dropdownMenu}>
-                      <TouchableOpacity 
-                        style={styles.dropdownItem}
-                        onPress={() => setShowDateFilter(false)}
-                      >
-                        <Text style={styles.dropdownText}>Today</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.dropdownItem}
-                        onPress={() => setShowDateFilter(false)}
-                      >
-                        <Text style={styles.dropdownText}>Last 7 days</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.dropdownItem}
-                        onPress={() => setShowDateFilter(false)}
-                      >
-                        <Text style={styles.dropdownText}>Last 30 days</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.dropdownItem}
-                        onPress={() => setShowDateFilter(false)}
-                      >
-                        <Text style={styles.dropdownText}>All time</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              </View>
+              {notifications.some(n => !n.read) && (
+                <TouchableOpacity 
+                  style={[styles.markAllButton, markAllPressed && styles.markAllButtonPressed]}
+                  onPress={handleMarkAllAsRead}
+                  activeOpacity={0.7}
+                >
+                  <Image 
+                    source={require('../../android/app/src/assets/images/mark.png')}
+                    style={styles.markAllIcon}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
@@ -585,7 +495,7 @@ const styles = StyleSheet.create({
   },
   topDarkSection: {
     backgroundColor: MAIN_THEME_COLOR,
-    height: scaleHeight(120),
+    height: scaleHeight(95),
     borderBottomLeftRadius: scaleWidth(35),
     borderBottomRightRadius: scaleWidth(35),
     paddingBottom: scaleHeight(10),
@@ -595,80 +505,58 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: scaleWidth(20),
-    paddingTop: scaleHeight(20),
+    paddingTop: scaleHeight(10),
   },
   backButton: {
-    padding: scaleWidth(8),
-    marginRight: scaleWidth(10),
+    padding: 12, 
+    justifyContent: 'center',
+    alignItems: 'left',
+    minHeight: 55,
+    minWidth: 55,
   },
   backButtonText: {
-    fontSize: scaleFont(28),
+    fontSize: scaleFont(35),
     color: 'white',
     fontWeight: '300',
   },
-  screenTitle: {
-    fontSize: scaleFont(24), 
-    fontWeight: '800', 
-    color: 'white',
-    textAlign: 'left',
+  headerTitle: {
+    fontSize: scaleFont(22),
+    fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
+    color: "#ffffff",
+    textAlign: 'center',
     flex: 1,
-    marginLeft: scaleWidth(5),
+    marginLeft: scaleWidth(-20),
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+        fontFamily: 'sans-serif-condensed',
+      },
+    }),
   },
-  rightButtonsContainer: {
+  markAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  markAllReadButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: scaleWidth(10),
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: scaleWidth(12),
     paddingVertical: scaleHeight(6),
-    borderRadius: scaleWidth(8),
-    marginRight: scaleWidth(10),
+    borderRadius: scaleWidth(20),
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
+    zIndex: 10,
   },
-  markAllReadText: {
-    fontSize: scaleFont(11),
+  markAllButtonPressed: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderColor: PRIMARY_ACCENT,
+  },
+  markAllIcon: {
+    width: scaleWidth(16),
+    height: scaleWidth(16),
+    marginRight: scaleWidth(6),
+    tintColor: 'white',
+  },
+  markAllText: {
+    fontSize: scaleFont(12),
     color: 'white',
-    fontWeight: '500',
-  },
-  filterContainer: {
-    position: 'relative',
-  },
-  filterIconButton: {
-    padding: scaleWidth(12),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  filterIcon: {
-    fontSize: scaleFont(24),
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  dropdownMenu: {
-    position: 'absolute',
-    top: scaleHeight(45),
-    right: 0,
-    backgroundColor: 'white',
-    borderRadius: scaleWidth(8),
-    paddingVertical: scaleHeight(8),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-    minWidth: scaleWidth(140),
-    zIndex: 1000,
-  },
-  dropdownItem: {
-    paddingHorizontal: scaleWidth(16),
-    paddingVertical: scaleHeight(10),
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  dropdownText: {
-    fontSize: scaleFont(14),
-    color: colors.textPrimary,
     fontWeight: '500',
   },
   bottomLightSection: {
@@ -681,30 +569,32 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: scaleWidth(20),
+    paddingHorizontal: scaleWidth(10),
     paddingBottom: scaleHeight(15),
     paddingTop: scaleHeight(5),
   },
   filterButton: {
     paddingHorizontal: scaleWidth(10),
-    paddingVertical: scaleHeight(5),
+    paddingVertical: scaleHeight(6),
     borderRadius: scaleWidth(12),
     backgroundColor: colors.backgroundLight,
     borderWidth: 1,
     borderColor: '#DEE2E6',
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    marginHorizontal: scaleWidth(2),
+    marginHorizontal: scaleWidth(3),
+    marginVertical: scaleHeight(3),
+    minWidth: scaleWidth(70),
   },
   activeFilterButton: {
     backgroundColor: PRIMARY_ACCENT,
     borderColor: PRIMARY_ACCENT,
   },
   filterText: {
-    fontSize: scaleFont(10),
+    fontSize: scaleFont(11),
     fontWeight: '500',
     color: colors.textPrimary,
     textTransform: 'capitalize',
@@ -723,7 +613,7 @@ const styles = StyleSheet.create({
     textAlign: 'left',
   },
   listContentContainer: {
-    paddingHorizontal: scaleWidth(20),
+    paddingHorizontal: scaleWidth(15),
     paddingBottom: scaleHeight(40),
   },
   notificationCard: {

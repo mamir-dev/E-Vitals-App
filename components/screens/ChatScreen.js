@@ -366,13 +366,22 @@ DISCLAIMER: Always include "Consult healthcare professional for medical advice" 
 
             {/* Input */}
             <View style={styles.inputContainer}>
-              <TextInput
+              {/* <TextInput
                 style={styles.input}
                 placeholder="Ask about your health data..."
                 value={input}
                 onChangeText={setInput}
                 editable={!isLoading}
                 multiline
+              /> */}
+              <TextInput
+                  style={styles.input}
+                  placeholder="Ask about your health data..."
+                  placeholderTextColor="#999"
+                  value={input}
+                  onChangeText={setInput}
+                  editable={!isLoading}
+                  multiline
               />
               <TouchableOpacity 
                 style={[
@@ -413,7 +422,7 @@ const styles = StyleSheet.create({
   // --- Header Styles (Same as ProfileScreen) ---
   topDarkSection: {
     backgroundColor: NAVY_BLUE,
-    height: scaleHeight(120),
+    height: scaleHeight(95),
     borderBottomLeftRadius: scaleWidth(35),
     borderBottomRightRadius: scaleWidth(35),
     paddingBottom: scaleHeight(10),
@@ -426,11 +435,11 @@ const styles = StyleSheet.create({
     paddingTop: scaleHeight(20),
   },
   backButton: {
-    padding: scaleWidth(12),
-    justifyContent: 'center',
-    alignItems: 'left',
-    minHeight: 55,
-    minWidth: 55,
+  padding: 6, 
+  justifyContent: 'center',
+  alignItems: 'left',
+  minHeight: 55, // Removed scaleHeight
+  minWidth: 55, // Removed scaleWidth
   },
   backButtonText: {
     fontSize: scaleFont(35),
@@ -438,12 +447,18 @@ const styles = StyleSheet.create({
     fontWeight: '300',
   },
   headerTitle: {
-    fontSize: scaleFont(22),
-    fontWeight: '700',
-    color: WHITE,
-    textAlign: 'center',
-    flex: 1,
-    marginLeft: scaleWidth(5),
+  fontSize: scaleFont(22),
+  fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
+  color: WHITE,
+  textAlign: 'center',
+  flex: 1,
+  marginLeft: scaleWidth(5),
+  ...Platform.select({
+    android: {
+      includeFontPadding: false,
+      fontFamily: 'sans-serif-condensed', // Android system font
+    },
+  }),
   },
   headerSpacer: {
     width: scaleWidth(36),
@@ -455,8 +470,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: scaleWidth(35),
     borderTopRightRadius: scaleWidth(35),
-    marginTop: -scaleWidth(15),
+    marginTop: scaleWidth(-10),
     paddingTop: scaleWidth(20),
+    // transform: [{ translateY: -scaleHeight(10) }], // 🔼 move up slightly
   },
 
   // Quick Analysis Section
@@ -486,7 +502,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   quickAnalysisButton: {
-    backgroundColor: colors.primaryLight || '#E8F0FE',
+    backgroundColor: colors.primaryLight || '#f0eeeeff',
     paddingHorizontal: scaleWidth(12),
     paddingVertical: scaleHeight(8),
     borderRadius: scaleWidth(16),
@@ -555,43 +571,73 @@ const styles = StyleSheet.create({
 
   // Input Section
   inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: WHITE,
-    padding: scaleWidth(8),
+  //   flexDirection: "row",
+  //   alignItems: "center",
+  //   backgroundColor: WHITE,
+  //   padding: scaleWidth(8),
+  //   borderTopWidth: 1,
+  //   borderColor: LIGHT_GREY,
+  //   marginHorizontal: scaleWidth(20),
+  //   marginBottom: scaleHeight(10),
+  //   borderRadius: scaleWidth(20),
+  //   shadowColor: '#000',
+  //   shadowOffset: { width: 0, height: -1 },
+  //   shadowOpacity: 0.05,
+  //   shadowRadius: 3,
+  //   elevation: 3,
+  // },
+  flexDirection: 'row',
+    alignItems: 'center',
     borderTopWidth: 1,
-    borderColor: LIGHT_GREY,
-    marginHorizontal: scaleWidth(20),
-    marginBottom: scaleHeight(10),
-    borderRadius: scaleWidth(20),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 3,
+    borderTopColor: '#EEE',
+    paddingHorizontal: scaleWidth(20),
+    paddingTop: scaleHeight(12),
+    paddingBottom: scaleHeight(20),
+    backgroundColor: WHITE,
   },
   input: {
+    // flex: 1,
+    // backgroundColor: colors.backgroundLight || '#F9F9F9',
+    // borderRadius: scaleWidth(20),
+    // paddingHorizontal: scaleWidth(15),
+    // paddingVertical: scaleHeight(10),
+    // fontSize: scaleFont(15),
+    // marginRight: scaleWidth(8),
+    // color: colors.textPrimary || '#333',
+    // maxHeight: scaleHeight(100),
     flex: 1,
-    backgroundColor: colors.backgroundLight || '#F9F9F9',
+    borderWidth: 1,
+    borderColor: '#DDD',
     borderRadius: scaleWidth(20),
-    paddingHorizontal: scaleWidth(15),
+    paddingHorizontal: scaleWidth(16),
     paddingVertical: scaleHeight(10),
-    fontSize: scaleFont(15),
-    marginRight: scaleWidth(8),
-    color: colors.textPrimary || '#333',
-    maxHeight: scaleHeight(100),
-  },
+    fontSize: scaleFont(14),
+    color: colors.textPrimary,
+    backgroundColor: '#F9F9F9',
+    maxHeight: scaleHeight(80),
+    },
   sendButton: {
+    // backgroundColor: colors.secondaryButton || '#4A6572',
+    // borderRadius: scaleWidth(20),
+    // padding: scaleWidth(10),
+    // width: scaleWidth(40),
+    // height: scaleWidth(40),
+    // justifyContent: 'center',
+    // alignItems: 'center',
     backgroundColor: colors.secondaryButton || '#4A6572',
     borderRadius: scaleWidth(20),
-    padding: scaleWidth(10),
-    width: scaleWidth(40),
-    height: scaleWidth(40),
-    justifyContent: 'center',
+    paddingHorizontal: scaleWidth(20),
+    paddingVertical: scaleHeight(10),
+    marginLeft: scaleWidth(10),
+    minWidth: scaleWidth(80),
     alignItems: 'center',
+    justifyContent: 'center',
   },
   sendText: {
+    // color: WHITE,
+    // fontSize: scaleFont(18),
     color: WHITE,
-    fontSize: scaleFont(18),
+    fontSize: scaleFont(14),
+    fontWeight: '600',
   },
 });

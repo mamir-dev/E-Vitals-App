@@ -15,7 +15,6 @@ import {
   Modal,
   StatusBar,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors, fonts } from '../../config/globall';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -918,11 +917,10 @@ const styles = StyleSheet.create({
   },
   topDarkSection: {
     backgroundColor: NAVY_BLUE,
-    height: scaleHeight(120),
+    height: scaleHeight(95),
     borderBottomLeftRadius: scaleWidth(35),
     borderBottomRightRadius: scaleWidth(35),
     paddingBottom: scaleHeight(10),
-    justifyContent: 'flex-start',
   },
   headerRow: {
     flexDirection: 'row',
@@ -943,39 +941,42 @@ const styles = StyleSheet.create({
   justifyContent: 'center',
 },
   backButton: {
-    padding: 12,
-    justifyContent: 'center',
-    alignItems: 'left',
-    minHeight: 55,
-    minWidth: 55,
+  padding: 10, 
+  justifyContent: 'center',
+  alignItems: 'left',
+  minHeight: 55, // Removed scaleHeight
+  minWidth: 55, // Removed scaleWidth
   },
   backButtonText: {
     fontSize: scaleFont(35),
-    color: WHITE,
+    color: 'white',
     fontWeight: '300',
   },
   headerTitle: {
-    fontSize: scaleFont(22),
-    fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
-    color: WHITE,
-    textAlign: 'center',
-    ...Platform.select({
-      android: {
-        includeFontPadding: false,
-        fontFamily: 'sans-serif-condensed',
-      },
-    }),
+  fontSize: scaleFont(22),
+  fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
+  color: WHITE,
+  textAlign: 'center',
+  flex: 1,
+  marginLeft: scaleWidth(18),
+  ...Platform.select({
+    android: {
+      includeFontPadding: false,
+      fontFamily: 'sans-serif-condensed', // Android system font
+    },
+  }),
   },
-  headerSpacer: {
-    width: 55,
+   headerSpacer: {
+    width: scaleWidth(36),
   },
-  bottomLightSection: {
+ bottomLightSection: {
     flex: 1,
     backgroundColor: 'white',
     borderTopLeftRadius: scaleWidth(35),
     borderTopRightRadius: scaleWidth(35),
-    marginTop: -scaleWidth(15),
+    marginTop: scaleWidth(-25),
     paddingTop: scaleWidth(20),
+    // transform: [{ translateY: -scaleHeight(10) }], // 🔼 move up slightly
   },
   keyboardContainer: {
     flex: 1,
@@ -988,12 +989,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(20),
     paddingBottom: scaleWidth(40)
   },
-  sectionTitle: { 
-    fontSize: scaleFont(16), 
-    fontWeight: 'bold', 
-    color: colors.textPrimary, 
-    marginTop: scaleHeight(16), 
-    marginBottom: scaleHeight(8) 
+  sectionTitle: {
+    fontSize: scaleFont(18),
+    fontWeight: '700',
+    color: NAVY_BLUE,
+    marginBottom: scaleHeight(15),
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: scaleHeight(15),
   },
   caregiverContainer: {
     marginBottom: scaleHeight(12),
@@ -1371,7 +1377,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-  // ✅ Updated Full Screen Chat Styles with curved header
+  //  Updated Full Screen Chat Styles 
   fullScreenChatContainer: {
     flex: 1,
     backgroundColor: NAVY_BLUE,
@@ -1379,7 +1385,7 @@ const styles = StyleSheet.create({
   chatMainContent: {
     flex: 1,
   },
-  // ✅ Chat header info styles
+  //  Chat header info styles
   chatHeaderInfo: {
     alignItems: 'center',
     marginTop: scaleHeight(4),
