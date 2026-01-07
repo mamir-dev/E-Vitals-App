@@ -6,7 +6,7 @@ import Svg, { Path } from 'react-native-svg';
 const { width, height } = Dimensions.get('window');
 
 const WHITE_COLOR = '#FFFFFF';
-const NAVY_BLUE_COLOR = '#11224D';
+const NAVY_BLUE_COLOR = '#293d55';
 
 // Base values from original design for 375 width (typical)
 // We'll scale based on screen width, but keep aspect ratios consistent

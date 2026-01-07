@@ -27,7 +27,7 @@ const scaleWidth = size => (width / guidelineBaseWidth) * size;
 const scaleHeight = size => (height / guidelineBaseHeight) * size;
 const scaleFont = size => scaleWidth(size);
 
-const HEADER_COLOR = colors.primaryButton || '#11224D';
+const HEADER_COLOR = colors.primaryButton || '#293d55';
 const WHITE = '#FFFFFF';
 
 const FollowUp = ({ navigation }) => {

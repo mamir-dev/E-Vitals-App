@@ -30,7 +30,7 @@ const scaleHeight = size => (height / guidelineBaseHeight) * size;
 const scaleFont = size => scaleWidth(size);
 
 /* ──────────────────────  COLORS  ────────────────────── */
-const NAVY_BLUE = colors.primaryButton || '#11224D';
+const NAVY_BLUE = colors.primaryButton || '#293d55';
 const WHITE = '#FFFFFF';
 const LIGHT_GREY = '#F4F7F9';
 const BORDER_GREY = '#E0E0E0';

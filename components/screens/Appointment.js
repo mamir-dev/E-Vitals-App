@@ -28,7 +28,7 @@ const scaleWidth = size => (width / guidelineBaseWidth) * size;
 const scaleHeight = size => (height / guidelineBaseHeight) * size;
 const scaleFont = size => scaleWidth(size);
 
-const NAVY_BLUE = colors.primaryButton || '#11224D';
+const NAVY_BLUE = colors.primaryButton || '#293d55';
 const WHITE = '#FFFFFF';
 const LIGHT_GREY = '#F4F7F9';
 
@@ -1047,12 +1047,12 @@ const styles = StyleSheet.create({
     padding: scaleWidth(16),
     marginTop: scaleHeight(16),
     borderWidth: 1,
-    borderColor: '#11224D',
+    borderColor: '#293d55',
   },
   appointmentTitle: {
     fontSize: scaleFont(18),
     fontWeight: 'bold',
-    color: '#11224D',
+    color: '#293d55',
     marginBottom: scaleHeight(8),
     textAlign: 'center',
   },
@@ -1087,7 +1087,7 @@ const styles = StyleSheet.create({
   cancelledText: {
     fontSize: scaleFont(18),
     fontWeight: 'bold',
-    color: '#11224D',
+    color: '#293d55',
     marginBottom: scaleHeight(4),
   },
   cancelledSubText: {

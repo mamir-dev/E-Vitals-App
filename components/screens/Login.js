@@ -188,7 +188,7 @@ const Login = ({ navigation }) => {
                 disabled={isLoading}
               >
                 <LinearGradient
-                  colors={[colors.primaryButton, colors.secondaryButton]}
+                  colors={['#293d55', colors.secondaryButton]}
                   style={styles.buttonGradient}
                 >
                   <Text style={styles.buttonText}>

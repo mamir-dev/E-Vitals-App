@@ -819,18 +819,18 @@ const styles = (scaleWidth, scaleHeight, scaleFont) => StyleSheet.create({
   cardMainValue: {
     fontSize: scaleFont(26),
     fontWeight: '700',
-    color: '#11224D',
+    color: '#293d55',
     lineHeight: scaleFont(30),
   },
   cardSlash: {
     fontSize: scaleFont(26),
     fontWeight: '700',
-    color: '#11224D',
+    color: '#293d55',
   },
   cardSecondValue: {
     fontSize: scaleFont(26),
     fontWeight: '700',
-    color: '#11224D',
+    color: '#293d55',
   },
   cardDateTime: {
     fontSize: scaleFont(10),

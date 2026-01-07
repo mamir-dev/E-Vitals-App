@@ -24,7 +24,7 @@ const scaleWidth = size => (width / guidelineBaseWidth) * size;
 const scaleHeight = size => (height / guidelineBaseHeight) * size;
 const scaleFont = size => scaleWidth(size);
 
-const MAIN_THEME_COLOR = colors.primaryButton || '#11224D';
+const MAIN_THEME_COLOR = colors.primaryButton || '#293d55';
 const PRIMARY_ACCENT = MAIN_THEME_COLOR;
 const SECONDARY_ACCENT = colors.secondaryButton || '#D9E0F5';
 

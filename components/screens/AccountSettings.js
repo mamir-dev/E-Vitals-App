@@ -26,7 +26,7 @@ const scaleWidth = size => (width / guidelineBaseWidth) * size;
 const scaleHeight = size => (height / guidelineBaseHeight) * size;
 const scaleFont = size => scaleWidth(size);
 
-const HEADER_COLOR = colors.primaryButton || '#11224D';
+const HEADER_COLOR = colors.primaryButton || '#293d55';
 const WHITE = '#FFFFFF';
 
 const AccountSettings = ({ navigation }) => {
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   },
   // Changed from saveButton to editInfoButton
   editInfoButton: {
-  backgroundColor: '#11224D', // Change this line
+  backgroundColor: '#293d55', // Change this line
   paddingVertical: verticalScale(16),
   borderRadius: scaleWidth(8),
   alignItems: 'center',
