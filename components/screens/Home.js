@@ -8,6 +8,7 @@ import { colors } from '../../config/globall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { useWindowDimensions } from 'react-native';
+import apiService from '../../services/apiService';
 
 // Base dimensions used for scaling calculations (standard phone size)
 const guidelineBaseWidth = 375;
@@ -311,138 +312,141 @@ export default function Home({ navigation }) {
     }
   };
 
-  // Function to fetch patient data from the API
+  // Function to fetch patient data and vitals from the API
   const fetchPatientData = async () => {
     try {
+      let practiceId = null;
+      let patientId = null;
+      
+      // First, try to get IDs from AsyncStorage
       const userData = await AsyncStorage.getItem('user');
-      if (!userData) {
-        console.error('User data not found in AsyncStorage');
-        return null;
+      if (userData) {
+        const user = JSON.parse(userData);
+        practiceId = user.practice_id;
+        patientId = user.patient_id || user.id;
       }
-  
-      const user = JSON.parse(userData);
-      const patientId = user.id || user.patient_id;
       
+      // If not in user data, try separate storage
+      if (!practiceId) {
+        const storedPracticeId = await AsyncStorage.getItem('practiceId');
+        practiceId = storedPracticeId;
+      }
       if (!patientId) {
-        console.error('Patient ID not found in user data');
-        return null;
+        const storedPatientId = await AsyncStorage.getItem('patientId');
+        patientId = storedPatientId;
       }
-  
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) {
-        console.error('Auth token not found');
-        return null;
-      }
-  
-      const response = await fetch(`https://evitals.life/api/patients/${patientId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-  
-      if (!response.ok) {
-        console.error(`Failed to fetch patient data: ${response.status} ${response.statusText}`);
-        return null;
-      }
-  
-      const result = await response.json();
       
-      console.log('=== FULL API RESPONSE ===');
-      console.log(JSON.stringify(result.data, null, 2));
-      console.log('=========================');
-      
-      if (result.success && result.data) {
-        const data = result.data;
-        const processedMeasurements = { bloodPressure: null, bloodGlucose: null, weight: null };
-  
-        console.log('Blood Pressure data:', data.dailyTrendGraphData);
-        console.log('Measurements data:', data.measurements);
-        
-        // Process Blood Pressure data
-        if (data.measurements?.bloodPressure) {
-          const bp = data.measurements.bloodPressure;
-          console.log('Raw BP data from measurements:', bp);
-          console.log('BP keys:', Object.keys(bp));
-          
-          const systolic = bp.systolic || bp.systolic_pressure || bp.systolic_value || '--';
-          const diastolic = bp.diastolic || bp.diastolic_pressure || bp.diastolic_value || '--';
-          const pulse = bp.pulse || bp.heart_rate || '--';
-          const measureDate = bp.measure_new_date_time || bp.date || bp.measurement_date || 'Recent';
-          
-          processedMeasurements.bloodPressure = { 
-            systolic_pressure: systolic, 
-            diastolic_pressure: diastolic, 
-            pulse: pulse, 
-            measure_new_date_time: measureDate 
-          };
-          console.log('Processed BP from measurements:', processedMeasurements.bloodPressure);
-        } 
-        else if (data.dailyTrendGraphData) {
-          const bpData = data.dailyTrendGraphData;
-          console.log('BP Data from dailyTrendGraphData:', {
-            systolic: bpData.systolic,
-            diastolic: bpData.diastolic,
-            toolTip: bpData.toolTip
-          });
-          
-          if (bpData.systolic && bpData.systolic.length > 0) {
-            const systolic = bpData.systolic[0];
-            const diastolic = bpData.diastolic?.[0] || '--';
-            const toolTip = bpData.toolTip?.[0] || '';
-            let measureDate = 'Recent';
-            if (toolTip.includes('<br>')) measureDate = toolTip.split('<br>')[0];
-            processedMeasurements.bloodPressure = { 
-              systolic_pressure: systolic, 
-              diastolic_pressure: diastolic, 
-              pulse: '--', 
-              measure_new_date_time: measureDate 
-            };
+      // If still not found, try to fetch from API
+      if (!practiceId || !patientId) {
+        try {
+          console.log('Fetching user data from API to get practice_id and patient_id...');
+          const userResult = await apiService.getCurrentUser();
+          if (userResult && userResult.data) {
+            const user = userResult.data.user || userResult.data;
+            if (user.practice_id) {
+              practiceId = String(user.practice_id);
+              await AsyncStorage.setItem('practiceId', practiceId);
+              // Update user data in AsyncStorage
+              if (userData) {
+                const parsedUser = JSON.parse(userData);
+                parsedUser.practice_id = user.practice_id;
+                await AsyncStorage.setItem('user', JSON.stringify(parsedUser));
+              }
+            }
+            if (user.patient_id || user.id) {
+              patientId = String(user.patient_id || user.id);
+              await AsyncStorage.setItem('patientId', patientId);
+              // Update user data in AsyncStorage
+              if (userData) {
+                const parsedUser = JSON.parse(userData);
+                parsedUser.patient_id = user.patient_id || user.id;
+                await AsyncStorage.setItem('user', JSON.stringify(parsedUser));
+              }
+            }
           }
+        } catch (apiError) {
+          console.log('Could not fetch user data from API:', apiError.message);
         }
+      }
+      
+      if (!practiceId || !patientId) {
+        console.error('Practice ID or Patient ID not found in user data or API');
+        return null;
+      }
   
-        // Process Blood Glucose data
-        if (data.measurements?.bloodGlucose) {
-          const bg = data.measurements.bloodGlucose;
-          console.log('Raw BG data:', bg);
-          processedMeasurements.bloodGlucose = { 
-            value: bg.blood_glucose_value_1 || '--', 
-            measure_new_date_time: bg.measure_new_date_time || '--' 
+      // Calculate date range for latest vitals (last 30 days)
+      const today = new Date();
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(today.getDate() - 30);
+      const fromDate = thirtyDaysAgo.toISOString().split('T')[0];
+      const toDate = today.toISOString().split('T')[0];
+      
+      const params = {
+        fromDate,
+        toDate,
+        sortBy: 'date'
+      };
+      
+      const processedMeasurements = { bloodPressure: null, bloodGlucose: null, weight: null };
+      
+      // Fetch Blood Pressure
+      try {
+        const bpResult = await apiService.getBloodPressure(practiceId, patientId, params);
+        if (bpResult.data && bpResult.data.length > 0) {
+          const latest = bpResult.data[bpResult.data.length - 1]; // Get last item (most recent)
+          processedMeasurements.bloodPressure = {
+            systolic_pressure: latest.systolic || latest.systolic_pressure || '--',
+            diastolic_pressure: latest.diastolic || latest.diastolic_pressure || '--',
+            pulse: latest.pulse || '--',
+            measure_new_date_time: latest.measurement_date || latest.date || latest.created_at || 'Recent'
           };
         }
-  
-        // Process Weight data
-        if (data.measurements?.weight) {
-          const w = data.measurements.weight;
-          console.log('Raw Weight data:', w);
-        
-          let weightValue = w.value || w.weight_value || w.weight || '--';
-          const unit = (w.unit || w.measurement_unit || 'kg').toLowerCase();
-          const weightDate = w.measure_new_date_time || w.date || '--';
-        
+      } catch (error) {
+        console.log('No blood pressure readings available:', error.message);
+      }
+      
+      // Fetch Blood Glucose
+      try {
+        const bgResult = await apiService.getBloodGlucose(practiceId, patientId, params);
+        if (bgResult.data && bgResult.data.length > 0) {
+          const latest = bgResult.data[bgResult.data.length - 1];
+          processedMeasurements.bloodGlucose = {
+            value: latest.glucose_value || latest.blood_glucose_value_1 || latest.value || '--',
+            measure_new_date_time: latest.measurement_date || latest.date || latest.created_at || '--'
+          };
+        }
+      } catch (error) {
+        console.log('No blood glucose readings available:', error.message);
+      }
+      
+      // Fetch Weight
+      try {
+        const weightResult = await apiService.getWeight(practiceId, patientId, params);
+        if (weightResult.data && weightResult.data.length > 0) {
+          const latest = weightResult.data[weightResult.data.length - 1];
+          let weightValue = latest.weight_value || latest.value || '--';
+          const unit = (latest.unit || 'lbs').toLowerCase();
+          
+          // Convert kg to lbs if needed
           if (unit === 'kg' && weightValue !== '--') {
             weightValue = (parseFloat(weightValue) * 2.20462).toFixed(1);
-            console.log(`Converted ${weightValue} kg → ${weightValue} lb`);
           }
-        
-          processedMeasurements.weight = { 
-            value: weightValue, 
-            measure_new_date_time: weightDate,
+          
+          processedMeasurements.weight = {
+            value: weightValue,
+            measure_new_date_time: latest.measurement_date || latest.date || latest.created_at || '--',
             unit: unit === 'kg' ? 'lb' : unit
           };
-        
-          console.log('Processed Weight (converted):', processedMeasurements.weight);
         }
-  
-        setMeasurements(processedMeasurements);
-        console.log('Final measurements:', processedMeasurements);
-        
-        // Return the complete data object for notification processing
-        return { ...data, measurements: processedMeasurements };
-      } else {
-        console.error('API response indicates failure:', result);
-        return null;
+      } catch (error) {
+        console.log('No weight readings available:', error.message);
       }
+  
+      setMeasurements(processedMeasurements);
+      console.log('Final measurements:', processedMeasurements);
+      
+      // Return data object for notification processing
+      return { measurements: processedMeasurements };
     } catch (error) {
       console.error('Failed to fetch patient data:', error);
       return null;

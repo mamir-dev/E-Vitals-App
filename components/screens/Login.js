@@ -16,6 +16,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LinearGradient from 'react-native-linear-gradient';
 import { colors } from '../../config/globall';
+import apiService from '../../services/apiService';
 
 // Device dimensions
 const { width, height } = Dimensions.get('window');
@@ -39,6 +40,8 @@ const Login = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isUsernameFocused, setIsUsernameFocused] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+  const [showOtp, setShowOtp] = useState(false);
+  const [otp, setOtp] = useState('');
 
   const handleLogin = async () => {
     if (!username.trim()) {
@@ -52,36 +55,73 @@ const Login = ({ navigation }) => {
 
     setIsLoading(true);
     try {
-      const response = await fetch('https://evitals.life/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: username.trim(),
-          password: password.trim(),
-        }),
-      });
+      const data = await apiService.login(username, password, false);
 
-      const raw = await response.text();
-      let data = raw ? JSON.parse(raw) : null;
-
-      if (!response.ok || !data) {
-        Alert.alert('Login failed', 'Invalid credentials or server error');
+      // Check if OTP is required
+      if (data.requires_otp) {
+        setShowOtp(true);
+        setIsLoading(false);
+        if (data.development_otp) {
+          console.log('Development OTP:', data.development_otp);
+          // In development, you might want to auto-fill OTP
+        }
         return;
       }
 
-      if (data.token) {
-        await AsyncStorage.setItem('authToken', data.token);
-      }
+      // Store user data
       if (data.user) {
         await AsyncStorage.setItem('user', JSON.stringify(data.user));
+        // Also store practice_id and patient_id if available for easier access
+        if (data.user.practice_id) {
+          await AsyncStorage.setItem('practiceId', String(data.user.practice_id));
+        }
+        if (data.user.patient_id) {
+          await AsyncStorage.setItem('patientId', String(data.user.patient_id));
+        }
       }
 
+      // Navigate to main app
       navigation.reset({
         index: 0,
         routes: [{ name: 'MainTabs' }],
       });
-    } catch {
-      Alert.alert('Network error', 'Unable to reach the server');
+    } catch (error) {
+      console.error('Login error:', error);
+      Alert.alert('Login Failed', error.message || 'Invalid credentials or server error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otp.trim()) {
+      Alert.alert('Error', 'Please enter the OTP code');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const data = await apiService.verifyOTP(otp.trim());
+
+      // Store user data after OTP verification
+      if (data.user) {
+        await AsyncStorage.setItem('user', JSON.stringify(data.user));
+        if (data.user.practice_id) {
+          await AsyncStorage.setItem('practiceId', String(data.user.practice_id));
+        }
+        if (data.user.patient_id) {
+          await AsyncStorage.setItem('patientId', String(data.user.patient_id));
+        }
+      }
+
+      // Navigate to main app
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      });
+    } catch (error) {
+      console.error('OTP verification error:', error);
+      Alert.alert('OTP Verification Failed', error.message || 'Invalid OTP code');
     } finally {
       setIsLoading(false);
     }
@@ -174,28 +214,80 @@ const Login = ({ navigation }) => {
                 </View>
               </View>
 
-              <View style={styles.optionsContainer}>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('ForgotPassword')}
-                >
-                  <Text style={styles.forgotText}>Forgot Password?</Text>
-                </TouchableOpacity>
-              </View>
+              {showOtp ? (
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>OTP Code</Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          borderColor: colors.primaryButton,
+                        },
+                      ]}
+                      placeholder="Enter OTP code"
+                      placeholderTextColor={colors.textSecondary}
+                      value={otp}
+                      onChangeText={setOtp}
+                      keyboardType="number-pad"
+                      editable={!isLoading}
+                      autoFocus
+                    />
+                  </View>
 
-              <TouchableOpacity
-                style={styles.button}
-                onPress={handleLogin}
-                disabled={isLoading}
-              >
-                <LinearGradient
-                  colors={['#293d55', colors.secondaryButton]}
-                  style={styles.buttonGradient}
-                >
-                  <Text style={styles.buttonText}>
-                    {isLoading ? 'Logging in...' : 'Login'}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.button}
+                    onPress={handleVerifyOtp}
+                    disabled={isLoading}
+                  >
+                    <LinearGradient
+                      colors={['#293d55', colors.secondaryButton]}
+                      style={styles.buttonGradient}
+                    >
+                      <Text style={styles.buttonText}>
+                        {isLoading ? 'Verifying...' : 'Verify OTP'}
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowOtp(false);
+                      setOtp('');
+                    }}
+                    style={{ marginTop: 10 }}
+                  >
+                    <Text style={[styles.forgotText, { textAlign: 'center' }]}>
+                      Back to Login
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <View style={styles.optionsContainer}>
+                    <TouchableOpacity
+                      onPress={() => navigation.navigate('ForgotPassword')}
+                    >
+                      <Text style={styles.forgotText}>Forgot Password?</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.button}
+                    onPress={handleLogin}
+                    disabled={isLoading}
+                  >
+                    <LinearGradient
+                      colors={['#293d55', colors.secondaryButton]}
+                      style={styles.buttonGradient}
+                    >
+                      <Text style={styles.buttonText}>
+                        {isLoading ? 'Logging in...' : 'Login'}
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </>
+              )}
 
               <View style={styles.securityContainer}>
                 <Text style={styles.securityText}>

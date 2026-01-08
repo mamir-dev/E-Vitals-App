@@ -14,6 +14,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../../config/globall';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import apiService from '../../services/apiService';
 
 // Get screen width and height
 const { width, height } = Dimensions.get('window');
@@ -67,95 +68,112 @@ const PatientProfileScreen = ({ navigation }) => {
     return String(value) || fallback;
   };
 
+  // Helper function to find a value in an object using multiple possible field names
+  const findField = (obj, fieldNames, fallback = null) => {
+    if (!obj || typeof obj !== 'object') return fallback;
+    for (const fieldName of fieldNames) {
+      if (obj[fieldName] !== null && obj[fieldName] !== undefined && obj[fieldName] !== '') {
+        return obj[fieldName];
+      }
+    }
+    return fallback;
+  };
+
   // Fetch patient data from API
   const fetchPatientData = async () => {
       try {
         setIsLoading(true);
       
-      // Get user data from AsyncStorage to get patient ID
-      const userData = await AsyncStorage.getItem('user');
-      if (!userData) {
-        console.error('User data not found in AsyncStorage');
-        Alert.alert("Error", "User data not found. Please login again.");
-        setIsLoading(false);
-        return;
-      }
-
-      const user = JSON.parse(userData);
-      const patientId = user.id || user.patient_id;
+      let result = null;
+      let data = null;
+      let currentUserData = null;
       
-      if (!patientId) {
-        console.error('Patient ID not found in user data');
-        Alert.alert("Error", "Patient ID not found. Please login again.");
-        setIsLoading(false);
-        return;
-      }
-
-      // Get auth token
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) {
-        console.error('Auth token not found');
-        Alert.alert("Error", "Authentication token not found. Please login again.");
-        setIsLoading(false);
-        return;
-      }
-
-      // Fetch patient data from API
-      const response = await fetch(`https://evitals.life/api/patients/${patientId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+      // First, try to get current user to get practice_id and patient_id
+      try {
+        const userResult = await apiService.getCurrentUser();
+        if (userResult && userResult.data) {
+          currentUserData = userResult.data.user || userResult.data;
+          // Store practice_id and patient_id if available
+          if (currentUserData.practice_id) {
+            await AsyncStorage.setItem('practiceId', String(currentUserData.practice_id));
+          }
+          if (currentUserData.patient_id || currentUserData.id) {
+            await AsyncStorage.setItem('patientId', String(currentUserData.patient_id || currentUserData.id));
+          }
         }
-      });
-
-      if (!response.ok) {
-        console.error(`Failed to fetch patient data: ${response.status} ${response.statusText}`);
-        Alert.alert("Error", `Failed to fetch patient data: ${response.status}`);
-        setIsLoading(false);
-        return;
+      } catch (userError) {
+        console.log('Could not fetch current user:', userError.message);
       }
-
-      const result = await response.json();
+      
+      // Try to get patient profile
+      try {
+        result = await apiService.getPatientProfile();
+        // Check multiple possible response structures
+        if (result) {
+          data = result.data || result.patient || result;
+        }
+      } catch (profileError) {
+        console.log('Could not fetch patient profile, trying patient details:', profileError.message);
+        
+        // Fallback: Try to get patient details using practice_id and patient_id
+        try {
+          const practiceId = await AsyncStorage.getItem('practiceId');
+          const patientId = await AsyncStorage.getItem('patientId');
+          
+          if (practiceId && patientId) {
+            result = await apiService.getPatientDetails(parseInt(practiceId), parseInt(patientId));
+            // Check multiple possible response structures
+            if (result) {
+              data = result.data || result.patient || result;
+            }
+          }
+        } catch (detailsError) {
+          console.log('Could not fetch patient details:', detailsError.message);
+        }
+      }
       
       // Log the full response for debugging
-      console.log('=== PROFILE API RESPONSE ===');
-      console.log(JSON.stringify(result.data, null, 2));
-      console.log('=== KEY FIELDS ===');
-      console.log('Practice:', result.data?.practice, 'Practice ID:', result.data?.practice_id);
-      console.log('Provider:', result.data?.provider, 'Provider ID:', result.data?.provider_id);
-      console.log('Date of Birth (root):', result.data?.date_of_birth);
-      console.log('Address (root):', result.data?.address);
-      console.log('Patient Model:', result.data?.patient_model);
-      const patientUser = result.data?.patient?.patient_user || result.data?.patient?.patientUser;
-      console.log('Patient User exists:', !!patientUser);
-      console.log('Patient User DOB:', patientUser?.date_of_birth);
-      console.log('Patient User City:', patientUser?.city);
-      console.log('Patient User State:', patientUser?.state);
-      console.log('Patient User Zip:', patientUser?.zip_code);
-      console.log('Patient User Practice ID:', patientUser?.practice_id);
-      console.log('Patient User Provider ID:', patientUser?.provider_id);
-      console.log('===========================');
+      if (result) {
+        console.log('=== FULL API RESULT ===');
+        console.log(JSON.stringify(result, null, 2));
+        console.log('======================');
+      }
+      if (data) {
+        console.log('=== PROFILE API DATA ===');
+        console.log(JSON.stringify(data, null, 2));
+        console.log('========================');
+      }
+      if (currentUserData) {
+        console.log('=== CURRENT USER DATA ===');
+        console.log(JSON.stringify(currentUserData, null, 2));
+        console.log('========================');
+      }
       
-      if (result.success && result.data) {
-        const data = result.data;
-        const patient = data.patient || data;
-        const patientModel = data.patient_model || {};
+      // Use currentUserData if data is not available or incomplete
+      if (!data && currentUserData) {
+        data = currentUserData;
+      }
+      
+      if (data) {
+        // Based on API response: data.patient contains all patient info
+        // Structure: { success: true, data: { patient: {...}, caregivers: [...] } }
+        const patient = data.patient || data.user || data;
         
-        // Extract patient information - check patient_model first, then patient, then data
-        const firstName = patientModel.first_name || patient.first_name || patient.firstName || '';
-        const lastName = patientModel.last_name || patient.last_name || patient.lastName || '';
-        const fullName = `${firstName} ${lastName}`.trim() || patient.name || patient.username || 'Not provided';
+        // Extract patient information from new API response structure
+        const firstName = patient.first_name || patient.firstName || currentUserData?.first_name || currentUserData?.firstName || '';
+        const lastName = patient.last_name || patient.lastName || currentUserData?.last_name || currentUserData?.lastName || '';
+        const fullName = `${firstName} ${lastName}`.trim() || patient.name || patient.username || currentUserData?.name || currentUserData?.username || 'Not provided';
         
-        // Format date of birth if available - check patient_model, root level, patient_user, and patient object
+        // Format date of birth if available - check multiple locations and field names
+        // Based on API response: date_of_birth is in patient object
         let dobFormatted = 'Not provided';
-        const patientUser = patient.patient_user || patient.patientUser;
-        // Check patient_user first since that's where the data is
-        const dobDate = (patientUser && patientUser.date_of_birth) || 
-                       patientModel.date_of_birth || 
-                       data.date_of_birth || 
-                       patient.dob || 
-                       patient.date_of_birth || 
-                       patient.birth_date;
+        const dobFieldNames = ['date_of_birth', 'dob', 'birth_date', 'birthDate', 'dateOfBirth'];
+        const dobDate = findField(patient, dobFieldNames) ||
+                       findField(data, dobFieldNames) ||
+                       findField(result?.data?.patient, dobFieldNames) ||
+                       findField(result?.data, dobFieldNames) ||
+                       findField(result, dobFieldNames) ||
+                       findField(currentUserData, dobFieldNames);
         if (dobDate) {
           try {
             const date = new Date(dobDate);
@@ -173,51 +191,89 @@ const PatientProfileScreen = ({ navigation }) => {
           }
         }
         
-        // Format address if available - check patient_model, root level, patient_user, and patient object
+        // Format address if available - check multiple locations and field names
+        // Based on API response: address_line_1, full_address, city, state_id, zip_code are in patient object
         let addressFormatted = 'Not provided';
-        // First try to build from patient_user fields (this is where the data is)
-        if (patientUser && (patientUser.address || patientUser.city || patientUser.state || patientUser.zip_code)) {
+        // Try to build from patient fields - check all possible locations
+        // Priority: full_address > address_line_1 > other address fields
+        const addressLine1 = patient.full_address || patient.address_line_1 || patient.address || patient.addressLine1 || patient.street || patient.street_address ||
+                            data.full_address || data.address_line_1 || data.address || data.street ||
+                            result?.data?.patient?.full_address || result?.data?.patient?.address_line_1 ||
+                            result?.data?.full_address || result?.data?.address_line_1 ||
+                            currentUserData?.full_address || currentUserData?.address || currentUserData?.address_line_1;
+        const city = patient.city || data.city || result?.data?.patient?.city || result?.data?.city || currentUserData?.city;
+        const state = patient.state || patient.state_id || data.state || data.state_id || result?.data?.patient?.state || result?.data?.patient?.state_id || result?.data?.state || currentUserData?.state;
+        const zip = patient.zip_code || patient.zipCode || patient.zip || patient.postal_code || patient.postalCode ||
+                   data.zip_code || data.zip || data.postal_code ||
+                   result?.data?.patient?.zip_code || result?.data?.zip_code || result?.data?.zip ||
+                   currentUserData?.zip_code || currentUserData?.zip;
+        
+        // Build address from components
+        if (addressLine1 || city || state || zip) {
           const addrParts = [
-            patientUser.address,
-            patientUser.city,
-            patientUser.state,
-            patientUser.zip_code
+            addressLine1,
+            city,
+            state,
+            zip
           ].filter(Boolean);
           addressFormatted = addrParts.length > 0 ? addrParts.join(', ') : 'Not provided';
-        } else if (patientModel.address || patientModel.city || patientModel.state || patientModel.zip_code) {
-          // Try to build from patient_model fields
-          const addrParts = [
-            patientModel.address,
-            patientModel.city,
-            patientModel.state,
-            patientModel.zip_code
-          ].filter(Boolean);
-          addressFormatted = addrParts.length > 0 ? addrParts.join(', ') : 'Not provided';
-        } else {
-          // Fallback to other locations
-          const addressData = data.address || patient.address;
-          if (addressData) {
-            if (typeof addressData === 'string') {
-              addressFormatted = addressData;
-            } else if (typeof addressData === 'object') {
-              // If address is an object, format it
-              const addrParts = [
-                addressData.street || addressData.address_line_1,
-                addressData.city,
-                addressData.state || addressData.STATE_NAME,
-                addressData.zip || addressData.zip_code || addressData.postal_code
-              ].filter(Boolean);
-              addressFormatted = addrParts.length > 0 ? addrParts.join(', ') : 'Not provided';
-            }
+        } else if (data.address) {
+          if (typeof data.address === 'string') {
+            addressFormatted = data.address;
+          } else if (typeof data.address === 'object') {
+            const addrParts = [
+              data.address.street || data.address.address_line_1 || data.address.addressLine1,
+              data.address.city,
+              data.address.state,
+              data.address.zip || data.address.zip_code || data.address.postal_code || data.address.postalCode
+            ].filter(Boolean);
+            addressFormatted = addrParts.length > 0 ? addrParts.join(', ') : 'Not provided';
+          }
+        } else if (currentUserData?.address) {
+          if (typeof currentUserData.address === 'string') {
+            addressFormatted = currentUserData.address;
+          } else if (typeof currentUserData.address === 'object') {
+            const addrParts = [
+              currentUserData.address.street || currentUserData.address.address_line_1,
+              currentUserData.address.city,
+              currentUserData.address.state,
+              currentUserData.address.zip || currentUserData.address.zip_code
+            ].filter(Boolean);
+            addressFormatted = addrParts.length > 0 ? addrParts.join(', ') : 'Not provided';
           }
         }
         
         // Update user data state - ensure all values are strings
-        // Check patient_model first, then patient, then data
-        const patientEmail = patientModel.email || patient.email || data.email || 'Not provided';
-        const patientPhone = patientModel.phone_number || patientModel.cell_phone_number || 
-                           patient.phone || patient.mobile_number || patient.phone_number || 
-                           patient.cell_phone_number || data.phone || 'Not provided';
+        // Based on API response: phone_number is in patient object
+        const emailFieldNames = ['email', 'email_address', 'emailAddress'];
+        const phoneFieldNames = ['phone_number', 'phoneNumber', 'cell_phone_number', 'cellPhoneNumber', 
+                                 'phone', 'mobile_number', 'mobileNumber', 'telephone', 'tel', 'contact_number'];
+        
+        const patientEmail = findField(patient, emailFieldNames) ||
+                            findField(data, emailFieldNames) ||
+                            findField(result?.data?.patient, emailFieldNames) ||
+                            findField(result?.data, emailFieldNames) ||
+                            findField(result, emailFieldNames) ||
+                            findField(currentUserData, emailFieldNames) ||
+                            'Not provided';
+        
+        const patientPhone = findField(patient, phoneFieldNames) ||
+                            findField(data, phoneFieldNames) ||
+                            findField(result?.data?.patient, phoneFieldNames) ||
+                            findField(result?.data, phoneFieldNames) ||
+                            findField(result, phoneFieldNames) ||
+                            findField(currentUserData, phoneFieldNames) ||
+                            'Not provided';
+        
+        // Log extracted values for debugging
+        console.log('=== EXTRACTED VALUES ===');
+        console.log('DOB Date:', dobDate);
+        console.log('DOB Formatted:', dobFormatted);
+        console.log('Address:', addressFormatted);
+        console.log('Phone:', patientPhone);
+        console.log('Practice:', practice);
+        console.log('Practice ID:', practiceId);
+        console.log('========================');
         
         setUserData({
           name: safeString(fullName, 'Not provided'),
@@ -227,88 +283,78 @@ const PatientProfileScreen = ({ navigation }) => {
           address: safeString(addressFormatted, 'Not provided'),
         });
 
-        // Extract medical team information
-        // API now returns practice_name and provider name directly in data.practice and data.provider
-        // Also get IDs for reference
-        const practiceId = data.practice_id || (patientUser ? patientUser.practice_id : null);
-        const providerId = data.provider_id || (patientUser ? patientUser.provider_id : null);
+        // Extract medical team information from new API response
+        // Based on API response: practice_id, practice_name, provider_id, provider_name are in patient object
+        // Check multiple locations for practice_id
+        const practiceId = patient.practice_id || data.practice_id || 
+                          result?.data?.patient?.practice_id ||
+                          (data.practice && (data.practice.id || data.practice.practice_id)) ||
+                          (patient.practice && (patient.practice.id || patient.practice.practice_id)) ||
+                          result?.data?.practice_id || result?.practice_id ||
+                          currentUserData?.practice_id || null;
         
-        // Get practice name - API returns practice_name from practices table
-        let practice = data.practice;
+        const providerId = patient.provider_id || data.provider_id || 
+                          result?.data?.patient?.provider_id ||
+                          result?.data?.provider_id || result?.provider_id ||
+                          currentUserData?.provider_id || null;
         
-        // If practice is still a number (ID), it means backend hasn't been updated
-        if (typeof practice === 'number') {
-          console.warn('Backend returned Practice ID instead of name. ID:', practice);
-          console.warn('Backend should return practice name. Check if backend code is deployed.');
-          practice = null;
+        // Get practice name - check multiple locations and structures
+        // Based on API response: practice_name is directly in patient object
+        let practice = 'Not assigned';
+        const practiceObj = data.practice || patient.practice || result?.data?.practice || result?.practice || currentUserData?.practice;
+        
+        if (practiceObj) {
+          if (typeof practiceObj === 'string') {
+            practice = practiceObj;
+          } else if (practiceObj.name || practiceObj.practice_name) {
+            practice = practiceObj.name || practiceObj.practice_name;
+          } else if (practiceObj.practice_name) {
+            practice = practiceObj.practice_name;
+          }
+        } else if (patient.practice_name || data.practice_name || result?.data?.patient?.practice_name || result?.data?.practice_name || currentUserData?.practice_name) {
+          // Check patient object first (based on actual API response)
+          practice = patient.practice_name || data.practice_name || result?.data?.patient?.practice_name || result?.data?.practice_name || currentUserData?.practice_name;
         }
-        
-        // If practice is null/empty, show "Not assigned"
         practice = safeString(practice, 'Not assigned');
         
-        // Get provider name - API returns provider name (first_name + last_name) from users table
-        let provider = data.provider;
-        
-        // If provider is still a number (ID), it means backend hasn't been updated
-        if (typeof provider === 'number') {
-          console.warn('Backend returned Provider ID instead of name. ID:', provider);
-          console.warn('Backend should return provider name. Check if backend code is deployed.');
-          provider = null;
+        // Get provider name
+        // Based on API response: provider_name is directly in patient object
+        let provider = 'Not assigned';
+        if (patient.provider_name) {
+          provider = patient.provider_name;
+        } else if (data.provider_name) {
+          provider = data.provider_name;
+        } else if (result?.data?.patient?.provider_name) {
+          provider = result.data.patient.provider_name;
+        } else if (data.provider) {
+          if (typeof data.provider === 'string') {
+            provider = data.provider;
+          } else if (data.provider.first_name || data.provider.last_name) {
+            provider = `${data.provider.first_name || ''} ${data.provider.last_name || ''}`.trim();
+          }
         }
-        
-        // If provider is null/empty, show "Not assigned"
         provider = safeString(provider, 'Not assigned');
         
-        // Log extracted medical team data for debugging
-        console.log('=== MEDICAL TEAM EXTRACTED ===');
-        console.log('Practice Name:', practice, '(Practice ID:', practiceId, ')');
-        console.log('Provider Name:', provider, '(Provider ID:', providerId, ')');
-        console.log('================================');
-        
-        // Extract caregiver information from the response structure
-        // The API returns caregiver as an array, and each item has a caregivers array
-        let caregiver = null;
-        
-        // Check if data.caregiver is an array (as shown in API response)
-        if (data.caregiver && Array.isArray(data.caregiver) && data.caregiver.length > 0) {
-          const firstCaregiverItem = data.caregiver[0];
-          // Check if this item has a caregivers array
-          if (firstCaregiverItem.caregivers && Array.isArray(firstCaregiverItem.caregivers) && firstCaregiverItem.caregivers.length > 0) {
-            const caregiverUser = firstCaregiverItem.caregivers[0];
-            const firstName = caregiverUser.first_name || '';
-            const lastName = caregiverUser.last_name || '';
-            caregiver = `${firstName} ${lastName}`.trim() || caregiverUser.name || caregiverUser.username;
-          }
-        }
-        
-        // Fallback to other possible locations
-        if (!caregiver && data.caregivers && Array.isArray(data.caregivers) && data.caregivers.length > 0) {
-          const firstCaregiver = data.caregivers[0];
-          const firstName = firstCaregiver.first_name || '';
-          const lastName = firstCaregiver.last_name || '';
-          caregiver = `${firstName} ${lastName}`.trim() || firstCaregiver.name || firstCaregiver.caregiver_name || firstCaregiver.username;
-        }
-        
-        if (!caregiver && data.caregiver_name) {
+        // Get caregiver name
+        // Based on API response: caregivers is an array in data object, caregiver_id is in patient object
+        let caregiver = 'N/A (No caregiver assigned)';
+        // Check if there are caregivers in the data
+        const caregivers = data.caregivers || result?.data?.caregivers || [];
+        if (caregivers.length > 0 && caregivers[0].full_name) {
+          caregiver = caregivers[0].full_name;
+        } else if (patient.caregiver_name) {
+          caregiver = patient.caregiver_name;
+        } else if (data.caregiver_name) {
           caregiver = data.caregiver_name;
-        }
-        
-        if (!caregiver && patient.caregiver) {
-          if (typeof patient.caregiver === 'object') {
-            const firstName = patient.caregiver.first_name || '';
-            const lastName = patient.caregiver.last_name || '';
-            caregiver = `${firstName} ${lastName}`.trim() || patient.caregiver.name;
-          } else {
-            caregiver = patient.caregiver;
+        } else if (data.caregiver) {
+          if (typeof data.caregiver === 'string') {
+            caregiver = data.caregiver;
+          } else if (data.caregiver.first_name || data.caregiver.last_name) {
+            caregiver = `${data.caregiver.first_name || ''} ${data.caregiver.last_name || ''}`.trim();
+          } else if (data.caregiver.full_name) {
+            caregiver = data.caregiver.full_name;
           }
         }
-        
-        if (!caregiver && data.caregiver_info) {
-          const firstName = data.caregiver_info.first_name || '';
-          const lastName = data.caregiver_info.last_name || '';
-          caregiver = `${firstName} ${lastName}`.trim() || data.caregiver_info.name;
-        }
-        
         caregiver = safeString(caregiver, 'N/A (No caregiver assigned)');
         
         setMedicalTeam({
@@ -320,17 +366,24 @@ const PatientProfileScreen = ({ navigation }) => {
         });
 
         // Also update AsyncStorage with the fetched data for offline access
-        await AsyncStorage.setItem('user', JSON.stringify({
+        const userData = await AsyncStorage.getItem('user');
+        const user = userData ? JSON.parse(userData) : {};
+        
+        // Merge data from all sources (patient, data, currentUserData, existing user)
+        const mergedUser = {
           ...user,
           ...patient,
-          first_name: firstName,
-          last_name: lastName,
-          email: patient.email || user.email,
-          phone: patient.phone || patient.mobile_number || patient.phone_number || patient.cell_phone_number || user.phone,
-          dob: dobDate || patient.dob || patient.date_of_birth || user.dob,
-          date_of_birth: dobDate || patient.date_of_birth || user.date_of_birth,
-          address: addressFormatted !== 'Not provided' ? addressFormatted : (user.address || null)
-        }));
+          ...(currentUserData || {}),
+          first_name: firstName || user.first_name || currentUserData?.first_name,
+          last_name: lastName || user.last_name || currentUserData?.last_name,
+          email: patientEmail !== 'Not provided' ? patientEmail : (user.email || currentUserData?.email || ''),
+          phone: patientPhone !== 'Not provided' ? patientPhone : (user.phone || user.mobile_number || user.phone_number || currentUserData?.phone || currentUserData?.mobile_number || ''),
+          dob: dobDate || patient.dob || patient.date_of_birth || user.dob || user.date_of_birth || currentUserData?.dob || currentUserData?.date_of_birth,
+          date_of_birth: dobDate || patient.date_of_birth || user.date_of_birth || currentUserData?.date_of_birth,
+          address: addressFormatted !== 'Not provided' ? addressFormatted : (user.address || currentUserData?.address || null)
+        };
+        
+        await AsyncStorage.setItem('user', JSON.stringify(mergedUser));
 
         // Store medical team data in AsyncStorage
         await AsyncStorage.setItem('medical_team', JSON.stringify({
@@ -342,12 +395,16 @@ const PatientProfileScreen = ({ navigation }) => {
         }));
 
       } else {
-        console.error('API response indicates failure:', result);
+        console.log('No data from API, loading from AsyncStorage');
         // Fallback to AsyncStorage data if API fails
         await loadFromAsyncStorage();
       }
     } catch (error) {
       console.error('Failed to fetch patient data:', error);
+      // Don't show alert for "Resource not found" - just fallback to AsyncStorage
+      if (!error.message || !error.message.includes('Resource not found')) {
+        Alert.alert("Error", error.message || "Failed to fetch patient data. Please try again.");
+      }
       // Fallback to AsyncStorage data if API fails
       await loadFromAsyncStorage();
     } finally {
@@ -363,12 +420,63 @@ const PatientProfileScreen = ({ navigation }) => {
         if (user) {
           const parsed = JSON.parse(user);
         const fullName = `${parsed.first_name || ''} ${parsed.last_name || ''}`.trim() || parsed.name || parsed.username || 'Not provided';
+          
+          // Format date of birth if available - check multiple field names
+          let dobFormatted = 'Not provided';
+          const dobDate = parsed.dob || parsed.date_of_birth || parsed.birth_date || parsed.birthDate;
+          if (dobDate) {
+            try {
+              const date = new Date(dobDate);
+              if (!isNaN(date.getTime())) {
+                dobFormatted = date.toLocaleDateString('en-US', { 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                });
+              } else {
+                dobFormatted = String(dobDate);
+              }
+            } catch (e) {
+              dobFormatted = String(dobDate);
+            }
+          }
+          
+          // Check multiple field name variations for phone
+          const phoneValue = parsed.phone || parsed.phone_number || parsed.phoneNumber || 
+                            parsed.mobile_number || parsed.mobileNumber || 
+                            parsed.cell_phone_number || parsed.cellPhoneNumber ||
+                            parsed.telephone || parsed.tel;
+          
+          // Check multiple field name variations for address
+          let addressValue = parsed.address;
+          if (!addressValue || addressValue === 'Not provided') {
+            // Try to build address from components
+            const addrParts = [
+              parsed.address_line_1 || parsed.addressLine1 || parsed.street || parsed.street_address,
+              parsed.city,
+              parsed.state,
+              parsed.zip_code || parsed.zipCode || parsed.zip || parsed.postal_code || parsed.postalCode
+            ].filter(Boolean);
+            if (addrParts.length > 0) {
+              addressValue = addrParts.join(', ');
+            }
+          }
+          
           setUserData({
           name: safeString(fullName, 'Not provided'),
           email: safeString(parsed.email, 'Not provided'),
-          phone: safeString(parsed.phone || parsed.mobile_number || parsed.phone_number || parsed.cell_phone_number, 'Not provided'),
-          dob: safeString(parsed.dob || parsed.date_of_birth, 'Not provided'),
-          address: safeString(parsed.address, 'Not provided'),
+          phone: safeString(phoneValue, 'Not provided'),
+          dob: safeString(dobFormatted, 'Not provided'),
+          address: safeString(addressValue, 'Not provided'),
+        });
+      } else {
+        // If no user data, set defaults
+        setUserData({
+          name: 'Not provided',
+          email: 'Not provided',
+          phone: 'Not provided',
+          dob: 'Not provided',
+          address: 'Not provided',
         });
       }
 
@@ -383,9 +491,26 @@ const PatientProfileScreen = ({ navigation }) => {
           provider_id: parsedMedical.provider_id || null,
           caregiver: safeString(parsedMedical.caregiver, 'N/A (No caregiver assigned)')
         });
+      } else {
+        // If no medical team data, set defaults (not "Loading...")
+        setMedicalTeam({
+          practice: 'Not assigned',
+          practice_id: null,
+          provider: 'Not assigned',
+          provider_id: null,
+          caregiver: 'N/A (No caregiver assigned)'
+        });
       }
       } catch (e) {
       console.error("Failed to load data from AsyncStorage:", e);
+      // Set defaults on error
+      setMedicalTeam({
+        practice: 'Not assigned',
+        practice_id: null,
+        provider: 'Not assigned',
+        provider_id: null,
+        caregiver: 'N/A (No caregiver assigned)'
+      });
       }
     };
     
