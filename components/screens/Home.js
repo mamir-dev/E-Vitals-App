@@ -312,7 +312,7 @@ export default function Home({ navigation }) {
     }
   };
 
-  // Function to fetch patient data and vitals from the API
+  // Function to fetch patient data and vitals from the API using getPatientDetails
   const fetchPatientData = async () => {
     try {
       let practiceId = null;
@@ -374,86 +374,76 @@ export default function Home({ navigation }) {
         return null;
       }
   
-      // Calculate date range for latest vitals (last 30 days)
-      const today = new Date();
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(today.getDate() - 30);
-      const fromDate = thirtyDaysAgo.toISOString().split('T')[0];
-      const toDate = today.toISOString().split('T')[0];
+      // Use getPatientDetails endpoint which returns all latest vitals at once
+      console.log('📊 Fetching patient details with latest vitals...');
+      const detailsResult = await apiService.getPatientDetails(practiceId, patientId);
       
-      const params = {
-        fromDate,
-        toDate,
-        sortBy: 'date'
+      if (!detailsResult || !detailsResult.data || !detailsResult.data.success) {
+        console.error('Failed to fetch patient details');
+        return null;
+      }
+      
+      const patientData = detailsResult.data.data;
+      const latestMeasurements = patientData.latest_measurements || {};
+      
+      console.log('📋 Received latest measurements:', latestMeasurements);
+      
+      const processedMeasurements = { 
+        bloodPressure: null, 
+        bloodGlucose: null, 
+        weight: null 
       };
       
-      const processedMeasurements = { bloodPressure: null, bloodGlucose: null, weight: null };
-      
-      // Fetch Blood Pressure
-      try {
-        const bpResult = await apiService.getBloodPressure(practiceId, patientId, params);
-        if (bpResult.data && bpResult.data.length > 0) {
-          const latest = bpResult.data[bpResult.data.length - 1]; // Get last item (most recent)
-          processedMeasurements.bloodPressure = {
-            systolic_pressure: latest.systolic || latest.systolic_pressure || '--',
-            diastolic_pressure: latest.diastolic || latest.diastolic_pressure || '--',
-            pulse: latest.pulse || '--',
-            measure_new_date_time: latest.measurement_date || latest.date || latest.created_at || 'Recent'
-          };
-        }
-      } catch (error) {
-        console.log('No blood pressure readings available:', error.message);
+      // Process Blood Pressure
+      if (latestMeasurements.blood_pressure) {
+        const bp = latestMeasurements.blood_pressure;
+        processedMeasurements.bloodPressure = {
+          systolic_pressure: bp.systolic_pressure || '--',
+          diastolic_pressure: bp.diastolic_pressure || '--',
+          pulse: bp.pulse || '--',
+          measure_new_date_time: bp.measure_new_date_time || bp.measure_date_time || bp.created_at || 'Recent'
+        };
       }
       
-      // Fetch Blood Glucose
-      try {
-        const bgResult = await apiService.getBloodGlucose(practiceId, patientId, params);
-        if (bgResult.data && bgResult.data.length > 0) {
-          const latest = bgResult.data[bgResult.data.length - 1];
-          processedMeasurements.bloodGlucose = {
-            value: latest.glucose_value || latest.blood_glucose_value_1 || latest.value || '--',
-            measure_new_date_time: latest.measurement_date || latest.date || latest.created_at || '--'
-          };
-        }
-      } catch (error) {
-        console.log('No blood glucose readings available:', error.message);
+      // Process Blood Glucose
+      if (latestMeasurements.blood_glucose) {
+        const bg = latestMeasurements.blood_glucose;
+        processedMeasurements.bloodGlucose = {
+          value: bg.blood_glucose_value_1 || '--',
+          measure_new_date_time: bg.measure_new_date_time || bg.measure_date_time || bg.created_at || '--'
+        };
       }
       
-      // Fetch Weight
-      try {
-        const weightResult = await apiService.getWeight(practiceId, patientId, params);
-        if (weightResult.data && weightResult.data.length > 0) {
-          const latest = weightResult.data[weightResult.data.length - 1];
-          let weightValue = latest.weight_value || latest.value || '--';
-          const unit = (latest.unit || 'lbs').toLowerCase();
-          
-          // Convert kg to lbs if needed
-          if (unit === 'kg' && weightValue !== '--') {
-            weightValue = (parseFloat(weightValue) * 2.20462).toFixed(1);
-          }
-          
-          processedMeasurements.weight = {
-            value: weightValue,
-            measure_new_date_time: latest.measurement_date || latest.date || latest.created_at || '--',
-            unit: unit === 'kg' ? 'lb' : unit
-          };
+      // Process Weight
+      if (latestMeasurements.weight) {
+        const weight = latestMeasurements.weight;
+        let weightValue = weight.weight || weight.weight_value || '--';
+        
+        // Convert kg to lbs if needed (weight is typically stored in kg in database)
+        if (weightValue !== '--' && typeof weightValue === 'number') {
+          weightValue = (parseFloat(weightValue) * 2.20462).toFixed(1);
         }
-      } catch (error) {
-        console.log('No weight readings available:', error.message);
+        
+        processedMeasurements.weight = {
+          value: weightValue,
+          measure_new_date_time: weight.measure_new_date_time || weight.measure_date_time || weight.created_at || '--',
+          unit: 'lb'
+        };
       }
   
       setMeasurements(processedMeasurements);
-      console.log('Final measurements:', processedMeasurements);
+      console.log('✅ Latest vitals updated:', processedMeasurements);
       
       // Return data object for notification processing
       return { measurements: processedMeasurements };
     } catch (error) {
-      console.error('Failed to fetch patient data:', error);
+      console.error('❌ Failed to fetch patient data:', error);
       return null;
     }
   };
 
   // Fetch patient data and load user name when the screen comes into focus
+  // Also set up polling for real-time updates
   useFocusEffect(
     React.useCallback(() => {
       const loadData = async () => {
@@ -471,15 +461,15 @@ export default function Home({ navigation }) {
             setUserName(fullName);
           }
           
-          // **CRITICAL FIX**: Fetch patient data FIRST
+          // Fetch patient data FIRST
           const patientData = await fetchPatientData();
           
-          // **CRITICAL FIX**: Process notifications with fresh patient data
+          // Process notifications with fresh patient data
           if (patientData) {
             await processNotifications(patientData);
           }
           
-          // **CRITICAL FIX**: Now fetch badge count (it's been updated by processNotifications)
+          // Now fetch badge count (it's been updated by processNotifications)
           await fetchUnreadCount();
           
         } catch (e) {
@@ -487,16 +477,28 @@ export default function Home({ navigation }) {
         }
       };
       
+      // Load data immediately
       loadData();
       
-      // Refresh badge count every 5 seconds while screen is focused
-      const intervalId = setInterval(async () => {
-        await fetchUnreadCount();
-      }, 5000);
+      // Set up polling for real-time updates:
+      // - Refresh vitals every 10 seconds (when vitals change in web app, they'll appear here)
+      // - Refresh badge count every 5 seconds
+      const vitalsIntervalId = setInterval(async () => {
+        console.log('🔄 Polling for vitals updates...');
+        const patientData = await fetchPatientData();
+        if (patientData) {
+          await processNotifications(patientData);
+        }
+      }, 10000); // Poll every 10 seconds for vitals updates
       
-      // Cleanup interval on unmount
+      const badgeIntervalId = setInterval(async () => {
+        await fetchUnreadCount();
+      }, 5000); // Poll every 5 seconds for badge count
+      
+      // Cleanup intervals on unmount
       return () => {
-        clearInterval(intervalId);
+        clearInterval(vitalsIntervalId);
+        clearInterval(badgeIntervalId);
       };
     }, [])
   );
