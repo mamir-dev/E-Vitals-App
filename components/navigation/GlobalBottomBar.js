@@ -3,14 +3,14 @@
 
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { 
-  View, 
-  Text, 
-  Image, 
-  StyleSheet, 
-  Dimensions, 
-  Platform, 
-  TouchableOpacity 
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  Dimensions,
+  Platform,
+  TouchableOpacity
 } from 'react-native';
 
 // Importing global configuration settings for colors and fonts
@@ -44,7 +44,7 @@ export default function GlobalBottomBar({ navigation }) {
     <Tab.Navigator
       initialRouteName="Home"
       screenOptions={({ route }) => ({
-        headerShown: false, 
+        headerShown: false,
         tabBarStyle: styles.tabBar,
         tabBarHideOnKeyboard: true,
         tabBarShowLabel: true,
@@ -89,7 +89,7 @@ export default function GlobalBottomBar({ navigation }) {
     >
       {/* Tab Screens */}
       <Tab.Screen name="Profile" component={ProfileScreen} />
-      <Tab.Screen name="Appointment" component={Appointment} />
+      {/* <Tab.Screen name="Appointment" component={Appointment} /> */}
       <Tab.Screen name="Home" component={Home} />
       <Tab.Screen name="Agent" component={ChatScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
@@ -101,11 +101,11 @@ export default function GlobalBottomBar({ navigation }) {
 const styles = StyleSheet.create({
   // Style for the main tab bar container
   tabBar: {
-    height: Platform.select({ 
+    height: Platform.select({
       ios: scaleHeight(85),
       android: scaleHeight(75)
     }),
-    paddingBottom: Platform.select({ 
+    paddingBottom: Platform.select({
       ios: scaleHeight(10),
       android: scaleHeight(8)
     }),
@@ -126,23 +126,23 @@ const styles = StyleSheet.create({
   },
 
   // Background container for the icon
-  iconContainer: { 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    width: scaleWidth(40), 
-    height: scaleWidth(40), 
+  iconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: scaleWidth(40),
+    height: scaleWidth(40),
     borderRadius: scaleWidth(20),
     marginBottom: scaleHeight(2),
   },
 
   // Blue background when a tab is active/focused
-  activeIconBackground: { 
-    backgroundColor: colors.primaryButton 
+  activeIconBackground: {
+    backgroundColor: colors.primaryButton
   },
 
   // Icon image dimensions
-  icon: { 
-    width: scaleWidth(22), 
-    height: scaleWidth(22) 
+  icon: {
+    width: scaleWidth(22),
+    height: scaleWidth(22)
   },
 });
