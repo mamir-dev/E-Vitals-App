@@ -9,10 +9,14 @@ import {
   Platform, 
   Dimensions,
   StatusBar,
-  ScrollView
+  ScrollView,
+  Image,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../../config/globall';
+import apiService from '../../services/apiService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -33,14 +37,80 @@ export default function ChangePassword({ navigation }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const onSave = () => {
-    if (newPassword !== confirmPassword) {
-      alert('New password and confirm password do not match.');
+  // Password strength validation (matches backend validation for role_id 6 - Patient)
+  // Backend regex: /^(?=.*\d)(?=.*[a-zA-Z])[a-zA-Z0-9]{7,}$/
+  // This means: at least 7 chars, contains letter, contains number, only alphanumeric
+  const getPasswordStrength = (password) => {
+    const trimmedPassword = password.trim();
+    return {
+      hasMinLength: trimmedPassword.length >= 7,
+      hasLetter: /[a-zA-Z]/.test(trimmedPassword),
+      hasNumber: /[0-9]/.test(trimmedPassword),
+      isAlphanumericOnly: /^[a-zA-Z0-9]+$/.test(trimmedPassword), // Only letters and numbers, no special chars
+      hasUppercase: /[A-Z]/.test(trimmedPassword),
+      hasSpecialChar: /[!@#$%^&*(),.?":{}|<>]/.test(trimmedPassword),
+    };
+  };
+
+  const passwordStrength = getPasswordStrength(newPassword);
+
+  const onSave = async () => {
+    if (!currentPassword.trim()) {
+      Alert.alert('Error', 'Please enter your current password.');
       return;
     }
-    alert('Password changed successfully!');
-    navigation.goBack();
+
+    // Trim passwords to avoid whitespace issues
+    const trimmedNewPassword = newPassword.trim();
+    const trimmedConfirmPassword = confirmPassword.trim();
+
+    // Validate password strength (must match backend validation)
+    const strength = getPasswordStrength(trimmedNewPassword);
+    
+    // Check minimum 7 characters
+    if (trimmedNewPassword.length < 7) {
+      Alert.alert('Error', 'Password must be at least 7 characters long.');
+      return;
+    }
+    
+    // Check for letters and numbers (required for role_id 6 - Patient)
+    if (!strength.hasLetter || !strength.hasNumber) {
+      Alert.alert('Weak Password', 'Password must contain both letters and numbers.');
+      return;
+    }
+
+    // Compare passwords
+    if (trimmedNewPassword !== trimmedConfirmPassword) {
+      Alert.alert('Error', 'New password and confirm password do not match.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // Send trimmed password to backend
+      const result = await apiService.changePassword(currentPassword.trim(), trimmedNewPassword);
+      
+      if (result && result.success) {
+        Alert.alert('Success', 'Password changed successfully!', [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack()
+          }
+        ]);
+      } else {
+        Alert.alert('Error', result?.message || 'Failed to change password.');
+      }
+    } catch (error) {
+      console.error('❌ Error changing password:', error);
+      Alert.alert('Error', error.message || 'Failed to change password. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -78,37 +148,124 @@ export default function ChangePassword({ navigation }) {
               >
                 <View style={styles.formContainer}>
                   <Text style={styles.label}>Current Password</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter current password"
-                    secureTextEntry
-                    value={currentPassword}
-                    onChangeText={setCurrentPassword}
-                    placeholderTextColor={colors.textSecondary}
-                  />
+                  <View style={styles.passwordContainer}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter current password"
+                      secureTextEntry={!showCurrentPassword}
+                      value={currentPassword}
+                      onChangeText={setCurrentPassword}
+                      placeholderTextColor={colors.textSecondary}
+                      editable={!isLoading}
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeIconWrapper}
+                      onPress={() => setShowCurrentPassword(!showCurrentPassword)}
+                    >
+                      <Image
+                        source={
+                          showCurrentPassword
+                            ? require('../../android/app/src/assets/images/eye-open.png')
+                            : require('../../android/app/src/assets/images/eye-close.png')
+                        }
+                        style={styles.eyeIcon}
+                      />
+                    </TouchableOpacity>
+                  </View>
 
                   <Text style={styles.label}>New Password</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter new password"
-                    secureTextEntry
-                    value={newPassword}
-                    onChangeText={setNewPassword}
-                    placeholderTextColor={colors.textSecondary}
-                  />
+                  <View style={styles.passwordContainer}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter new password"
+                      secureTextEntry={!showNewPassword}
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                      placeholderTextColor={colors.textSecondary}
+                      editable={!isLoading}
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeIconWrapper}
+                      onPress={() => setShowNewPassword(!showNewPassword)}
+                    >
+                      <Image
+                        source={
+                          showNewPassword
+                            ? require('../../android/app/src/assets/images/eye-open.png')
+                            : require('../../android/app/src/assets/images/eye-close.png')
+                        }
+                        style={styles.eyeIcon}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {/* Password Strength Indicators */}
+                  {newPassword.length > 0 && (
+                    <View style={styles.passwordStrengthContainer}>
+                      <View style={styles.strengthRow}>
+                        <Text style={[styles.strengthText, passwordStrength.hasMinLength && styles.strengthTextCompleted]}>
+                          {passwordStrength.hasMinLength ? '✓' : '○'} At least 7 characters
+                        </Text>
+                      </View>
+                      <View style={styles.strengthRow}>
+                        <Text style={[styles.strengthText, passwordStrength.hasLetter && styles.strengthTextCompleted]}>
+                          {passwordStrength.hasLetter ? '✓' : '○'} Contains letters
+                        </Text>
+                      </View>
+                      <View style={styles.strengthRow}>
+                        <Text style={[styles.strengthText, passwordStrength.hasNumber && styles.strengthTextCompleted]}>
+                          {passwordStrength.hasNumber ? '✓' : '○'} Contains numbers
+                        </Text>
+                      </View>
+                      <View style={styles.strengthRow}>
+                        <Text style={[styles.strengthText, passwordStrength.hasUppercase && styles.strengthTextCompleted]}>
+                          {passwordStrength.hasUppercase ? '✓' : '○'} Contains uppercase letter
+                        </Text>
+                      </View>
+                      <View style={styles.strengthRow}>
+                        <Text style={[styles.strengthText, passwordStrength.isAlphanumericOnly && !passwordStrength.hasSpecialChar && styles.strengthTextCompleted, passwordStrength.hasSpecialChar && styles.strengthTextError]}>
+                          {passwordStrength.isAlphanumericOnly && !passwordStrength.hasSpecialChar ? '✓' : passwordStrength.hasSpecialChar ? '✗' : '○'} Only letters and numbers (no special characters)
+                        </Text>
+                      </View>
+                    </View>
+                  )}
 
                   <Text style={styles.label}>Confirm New Password</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Confirm new password"
-                    secureTextEntry
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    placeholderTextColor={colors.textSecondary}
-                  />
+                  <View style={styles.passwordContainer}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Confirm new password"
+                      secureTextEntry={!showConfirmPassword}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      placeholderTextColor={colors.textSecondary}
+                      editable={!isLoading}
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeIconWrapper}
+                      onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                    >
+                      <Image
+                        source={
+                          showConfirmPassword
+                            ? require('../../android/app/src/assets/images/eye-open.png')
+                            : require('../../android/app/src/assets/images/eye-close.png')
+                        }
+                        style={styles.eyeIcon}
+                      />
+                    </TouchableOpacity>
+                  </View>
 
-                  <TouchableOpacity style={styles.saveButton} onPress={onSave}>
-                    <Text style={styles.saveButtonText}>Save</Text>
+                  <TouchableOpacity 
+                    style={[styles.saveButton, isLoading && styles.buttonDisabled]} 
+                    onPress={onSave}
+                    disabled={isLoading}
+                    activeOpacity={0.8}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator size="small" color={WHITE} />
+                    ) : (
+                      <Text style={styles.saveButtonText}>Save</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </ScrollView>
@@ -207,32 +364,78 @@ const styles = StyleSheet.create({
     marginTop: scaleHeight(15),
   },
   input: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.borderLight,
     borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(14),
-    paddingHorizontal: scaleWidth(16),
+    paddingVertical: scaleHeight(16),
+    paddingHorizontal: scaleWidth(18),
+    paddingRight: scaleWidth(50), // Space for eye icon
     marginBottom: scaleHeight(5),
     fontSize: scaleFont(16),
     backgroundColor: WHITE,
     color: colors.textPrimary,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
     elevation: 2,
+    flex: 1,
+  },
+  passwordContainer: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  eyeIconWrapper: {
+    position: 'absolute',
+    right: scaleWidth(15),
+    padding: scaleWidth(5),
+    zIndex: 1,
+  },
+  eyeIcon: {
+    width: scaleWidth(24),
+    height: scaleWidth(24),
+    tintColor: colors.textSecondary,
+  },
+  passwordStrengthContainer: {
+    marginTop: scaleHeight(10),
+    marginBottom: scaleHeight(10),
+    paddingVertical: scaleHeight(8),
+    paddingHorizontal: scaleWidth(12),
+    backgroundColor: colors.backgroundLight || '#F8F9FD',
+    borderRadius: scaleWidth(8),
+  },
+  strengthRow: {
+    marginVertical: scaleHeight(4),
+  },
+  strengthText: {
+    fontSize: scaleFont(12),
+    color: colors.textSecondary,
+  },
+  strengthTextCompleted: {
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  strengthTextError: {
+    color: '#F44336',
+    fontWeight: '600',
   },
   saveButton: {
     backgroundColor: HEADER_COLOR,
     paddingVertical: scaleHeight(16),
     borderRadius: scaleWidth(12),
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: scaleHeight(30),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    minHeight: scaleHeight(52),
+    shadowColor: HEADER_COLOR,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
     fontSize: scaleFont(18),

@@ -54,7 +54,21 @@ export const handleApiError = async (response, defaultMessage = 'An error occurr
     return 'Access denied. Please check your permissions.';
   }
   if (response.status === 404) {
-    return 'Resource not found.';
+    // Try to get more details from response
+    try {
+      const text = await response.text();
+      if (text) {
+        try {
+          const data = JSON.parse(text);
+          return data.message || `Resource not found: ${response.url || 'Unknown endpoint'}`;
+        } catch (e) {
+          return `Resource not found: ${response.url || 'Unknown endpoint'}. Please check if the endpoint exists on the server.`;
+        }
+      }
+    } catch (error) {
+      // Response body already consumed
+    }
+    return `Resource not found: ${response.url || 'Unknown endpoint'}. Please check if the endpoint exists on the server.`;
   }
   if (response.status === 500) {
     return 'Server error. Please try again later.';

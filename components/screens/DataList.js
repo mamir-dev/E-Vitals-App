@@ -19,6 +19,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LineChart } from 'react-native-chart-kit';
 import { colors, fonts } from '../../config/globall';
+import apiService from '../../services/apiService';
 
 const { width, height } = Dimensions.get('window');
 const guidelineBaseWidth = 375;
@@ -37,7 +38,7 @@ const BORDER_GREY = '#E0E0E0';
 const TEXT_LIGHT = '#666666';
 
 /* ──────────────────────  DROPDOWN OPTIONS  ────────────────────── */
-const periodOptions = ['Last 7 days', 'Last 2 weeks', 'Last month', 'Last 3 months', 'Last 6 months', 'Last year', 'Custom range'];
+const periodOptions = ['All', 'Last 7 days', 'Last 2 weeks', 'Last month', 'Last 3 months', 'Last 6 months', 'Last year', 'Custom range'];
 const sortOptions = {
   bloodPressure: ['Date (newest first)', 'Date (oldest first)', 'Systolic (high-low)', 'Diastolic (high-low)', 'Pulse (high-low)'],
   bloodGlucose: ['Date (newest first)', 'Date (oldest first)', 'Glucose (high-low)', 'Glucose (low-high)'],
@@ -72,7 +73,7 @@ const CustomDropdown = ({ visible, options, onSelect, onClose }) => {
 const DataList = ({ navigation, route }) => {
   const { dataType = 'bloodPressure' } = route.params || {};
 
-  const [selectedPeriod, setSelectedPeriod] = useState('Last 7 days');
+  const [selectedPeriod, setSelectedPeriod] = useState('All'); // Default to 'All' to fetch all records
   const [sortBy, setSortBy] = useState('Date (newest first)');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -89,7 +90,11 @@ const DataList = ({ navigation, route }) => {
     let start = new Date();
     let end = new Date();
 
-    if (selectedPeriod === 'Last 7 days') {
+    if (selectedPeriod === 'All') {
+      // For "All", set a very old date to get all records
+      start = new Date('2000-01-01');
+      end = new Date('2099-12-31');
+    } else if (selectedPeriod === 'Last 7 days') {
       start.setDate(now.getDate() - 7);
     } else if (selectedPeriod === 'Last 2 weeks') {
       start.setDate(now.getDate() - 14);
@@ -136,80 +141,188 @@ const DataList = ({ navigation, route }) => {
       setLoading(true);
       setError(null);
 
+      // Get practiceId and patientId (patients.id, not user_id)
+      let practiceId = null;
+      let patientId = null; // This should be patients.id (patients_table_id)
+      
       const userData = await AsyncStorage.getItem('user');
-      if (!userData) throw new Error('User not found');
-      const user = JSON.parse(userData);
-      const patientId = user.id || user.patient_id;
-      if (!patientId) throw new Error('Patient ID missing');
+      if (userData) {
+        const user = JSON.parse(userData);
+        practiceId = user.practice_id || await AsyncStorage.getItem('practiceId');
+        // Try to get patients.id from stored values
+        const storedPatientsTableId = await AsyncStorage.getItem('patientsTableId');
+        if (storedPatientsTableId) {
+          patientId = storedPatientsTableId;
+        } else {
+          // Try to get from stored patient details
+          const storedPatientDetails = await AsyncStorage.getItem('patientDetails');
+          if (storedPatientDetails) {
+            const details = JSON.parse(storedPatientDetails);
+            patientId = details.patients_table_id || details.id || details.patient_id;
+          }
+          // Fallback to user.id if patients.id not found
+          if (!patientId) {
+            patientId = user.id || user.patient_id || await AsyncStorage.getItem('patientId');
+          }
+        }
+      }
+      
+      // If not found, fetch patient details to get patients.id
+      if (!practiceId || !patientId) {
+        try {
+          // First get practiceId and user_id
+          const userResult = await apiService.getCurrentUser();
+          const user = userResult?.data?.user || userResult?.user || userResult?.data || null;
+          if (user) {
+            if (user.practice_id) {
+              practiceId = String(user.practice_id);
+              await AsyncStorage.setItem('practiceId', practiceId);
+            }
+            // Now get patient details to find patients.id
+            if (practiceId && user.id) {
+              const patientDetails = await apiService.getPatientDetails(practiceId, user.id);
+              if (patientDetails && patientDetails.data && patientDetails.data.patient) {
+                const patient = patientDetails.data.patient;
+                // Use patients_table_id or id from patient details (this is what measurement APIs need)
+                patientId = String(patient.patients_table_id || patient.id || user.id);
+                // Store patient details and patients_table_id for future use
+                await AsyncStorage.setItem('patientDetails', JSON.stringify(patient));
+                await AsyncStorage.setItem('patientsTableId', patientId);
+              } else {
+                // Fallback to user.id
+                patientId = String(user.id);
+              }
+              await AsyncStorage.setItem('patientId', patientId);
+            }
+          }
+        } catch (apiError) {
+          console.log('⚠️ Could not fetch patient details from API:', apiError.message);
+        }
+      }
+      
+      if (!practiceId || !patientId) {
+        throw new Error('Practice ID or Patient ID missing');
+      }
 
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) throw new Error('Auth token missing');
-
-      const response = await fetch(`https://evitals.life/api/patients/${patientId}`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) throw new Error(`Failed: ${response.status}`);
-      const result = await response.json();
-      if (!result.success || !result.data) throw new Error('Invalid response');
-
-      const data = result.data;
-      const rawList = [];
+      console.log('📊 Fetching all records for:', { practiceId, patientId, dataType });
 
       const { start, end } = getDateRange();
+      
+      // Format dates for API (YYYY-MM-DD)
+      const formatDateForAPI = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
+      // For "All" period, don't send date filters to get all records
+      const fromDateStr = selectedPeriod === 'All' ? null : formatDateForAPI(start);
+      const toDateStr = selectedPeriod === 'All' ? null : formatDateForAPI(end);
+      
+      const rawList = [];
+      let result = null;
 
-      // Blood Pressure
-      if (dataType === 'bloodPressure' && data.measurements?.bloodPressure) {
-        const bp = data.measurements.bloodPressure;
-        const date = new Date(bp.measure_new_date_time);
-        if (date >= start && date <= end) {
-          rawList.push({
-            id: bp.measure_new_date_time,
-            date: formatDate(bp.measure_new_date_time),
-            time: formatTime(bp.measure_new_date_time),
-            systolic: parseFloat(bp.systolic || bp.systolic_pressure || 0),
-            diastolic: parseFloat(bp.diastolic || bp.diastolic_pressure || 0),
-            pulse: parseFloat(bp.pulse || bp.heart_rate || 0),
-          });
-        }
-      }
-
-      // Blood Glucose
-      if (dataType === 'bloodGlucose' && data.measurements?.bloodGlucose) {
-        const bg = data.measurements.bloodGlucose;
-        const date = new Date(bg.measure_new_date_time);
-        if (date >= start && date <= end) {
-          rawList.push({
-            id: bg.measure_new_date_time,
-            date: formatDate(bg.measure_new_date_time),
-            time: formatTime(bg.measure_new_date_time),
-            glucose: parseFloat(bg.blood_glucose_value_1 || 0),
-          });
-        }
-      }
-
-      // Weight
-      if (dataType === 'weight' && data.measurements?.weight) {
-        const w = data.measurements.weight;
-        const date = new Date(w.measure_new_date_time);
-        if (date >= start && date <= end) {
-          let value = parseFloat(w.value || w.weight_value || w.weight || 0);
-          const unit = (w.unit || w.measurement_unit || 'kg').toLowerCase();
-          if (unit === 'kg') value = (value * 2.20462).toFixed(1);
-          rawList.push({
-            id: w.measure_new_date_time,
-            date: formatDate(w.measure_new_date_time),
-            time: formatTime(w.measure_new_date_time),
-            weight: value,
-            unit: unit === 'kg' ? 'lb' : unit,
-          });
-        }
+      // Fetch ALL data based on type using apiService (date filters are optional)
+      if (dataType === 'bloodPressure') {
+        result = await apiService.getBloodPressure(practiceId, patientId, {
+          fromDate: fromDateStr,
+          toDate: toDateStr,
+        });
+        
+        console.log('✅ Blood Pressure API Response:', result);
+        
+        // Backend returns data directly in result.data array (not nested in measurements)
+        const measurements = Array.isArray(result.data) 
+          ? result.data 
+          : (result.data?.measurements ? (Array.isArray(result.data.measurements) ? result.data.measurements : [result.data.measurements]) : []);
+        
+        console.log('📋 Blood Pressure measurements count:', measurements.length);
+        console.log('📋 Sample BP measurement:', measurements[0]);
+        
+        measurements.forEach((bp) => {
+          const date = new Date(bp.measure_new_date_time || bp.measure_date_time || bp.created_at);
+          // Only filter by date if date range is specified
+          if (!fromDateStr || !toDateStr || (date >= start && date <= end)) {
+            rawList.push({
+              id: bp.id || bp.measure_new_date_time || Date.now(),
+              date: formatDate(bp.measure_new_date_time || bp.measure_date_time || bp.created_at),
+              time: formatTime(bp.measure_new_date_time || bp.measure_date_time || bp.created_at),
+              systolic: parseFloat(bp.systolic_pressure || bp.systolic || 0),
+              diastolic: parseFloat(bp.diastolic_pressure || bp.diastolic || 0),
+              pulse: parseFloat(bp.pulse || bp.heart_rate || 0),
+            });
+          }
+        });
+      } else if (dataType === 'bloodGlucose') {
+        result = await apiService.getBloodGlucose(practiceId, patientId, {
+          fromDate: fromDateStr,
+          toDate: toDateStr,
+        });
+        
+        console.log('✅ Blood Glucose API Response:', result);
+        
+        // Backend returns data directly in result.data array (not nested in measurements)
+        const measurements = Array.isArray(result.data) 
+          ? result.data 
+          : (result.data?.measurements ? (Array.isArray(result.data.measurements) ? result.data.measurements : [result.data.measurements]) : []);
+        
+        console.log('📋 Blood Glucose measurements count:', measurements.length);
+        console.log('📋 Sample BG measurement:', measurements[0]);
+        
+        measurements.forEach((bg) => {
+          const date = new Date(bg.measure_new_date_time || bg.measure_date_time || bg.created_at);
+          // Only filter by date if date range is specified
+          if (!fromDateStr || !toDateStr || (date >= start && date <= end)) {
+            rawList.push({
+              id: bg.id || bg.measure_new_date_time || Date.now(),
+              date: formatDate(bg.measure_new_date_time || bg.measure_date_time || bg.created_at),
+              time: formatTime(bg.measure_new_date_time || bg.measure_date_time || bg.created_at),
+              glucose: parseFloat(bg.blood_glucose_value_1 || bg.blood_glucose_value || bg.value || 0),
+            });
+          }
+        });
+      } else if (dataType === 'weight') {
+        result = await apiService.getWeight(practiceId, patientId, {
+          fromDate: fromDateStr,
+          toDate: toDateStr,
+        });
+        
+        console.log('✅ Weight API Response:', result);
+        
+        // Backend returns data directly in result.data array (not nested in measurements)
+        const measurements = Array.isArray(result.data) 
+          ? result.data 
+          : (result.data?.measurements ? (Array.isArray(result.data.measurements) ? result.data.measurements : [result.data.measurements]) : []);
+        
+        console.log('📋 Weight measurements count:', measurements.length);
+        console.log('📋 Sample Weight measurement:', measurements[0]);
+        
+        measurements.forEach((w) => {
+          const date = new Date(w.measure_new_date_time || w.measure_date_time || w.created_at);
+          // Only filter by date if date range is specified
+          if (!fromDateStr || !toDateStr || (date >= start && date <= end)) {
+            let value = parseFloat(w.weight || w.weight_value || w.value || 0);
+            // Convert kg to lbs for display (weight is stored in kg in database)
+            if (value > 0) {
+              value = parseFloat((value * 2.20462).toFixed(1));
+            }
+            rawList.push({
+              id: w.id || w.measure_new_date_time || Date.now(),
+              date: formatDate(w.measure_new_date_time || w.measure_date_time || w.created_at),
+              time: formatTime(w.measure_new_date_time || w.measure_date_time || w.created_at),
+              weight: value,
+              unit: 'lb',
+            });
+          }
+        });
       }
 
       const sorted = sortData(rawList);
       setMeasurements(sorted);
     } catch (err) {
-      setError(err.message);
+      console.error('❌ Error fetching patient data:', err);
+      setError(err.message || 'Failed to fetch data');
     } finally {
       setLoading(false);
     }

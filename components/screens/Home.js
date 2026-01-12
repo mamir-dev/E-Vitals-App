@@ -256,7 +256,7 @@ export default function Home({ navigation }) {
   // Define scaling functions INSIDE the component to access width and height
   const scaleWidth = size =>
     Math.min((width / guidelineBaseWidth) * size, size * 1.25);
-
+ 
   const scaleHeight = size =>
     Math.min((height / guidelineBaseHeight) * size, size * 1.25);
 
@@ -274,6 +274,12 @@ export default function Home({ navigation }) {
     bloodPressure: null,
     bloodGlucose: null,
     weight: null,
+  });
+  const [practiceRanges, setPracticeRanges] = useState(null);
+  const [vitalsStatus, setVitalsStatus] = useState({
+    bloodPressure: 'normal', // 'normal', 'high', 'low'
+    bloodGlucose: 'normal',
+    weight: 'normal',
   });
 
   // Function to set greeting based on time of day
@@ -312,6 +318,106 @@ export default function Home({ navigation }) {
     }
   };
 
+  // Fetch practice ranges/thresholds
+  const fetchPracticeRanges = async (practiceId) => {
+    try {
+      if (!practiceId) return null;
+      
+      console.log('📊 Fetching practice ranges for practiceId:', practiceId);
+      const rangesResult = await apiService.getPracticeRanges(practiceId);
+      
+      if (rangesResult && rangesResult.data) {
+        const ranges = rangesResult.data.ranges || rangesResult.data;
+        setPracticeRanges(ranges);
+        console.log('✅ Practice ranges loaded:', ranges);
+        return ranges;
+      }
+      return null;
+    } catch (error) {
+      console.log('⚠️ Could not fetch practice ranges, using defaults:', error.message);
+      return null;
+    }
+  };
+
+  // Determine vitals status based on practice ranges
+  const determineVitalsStatus = (measurements, ranges) => {
+    const status = {
+      bloodPressure: 'normal',
+      bloodGlucose: 'normal',
+      weight: 'normal',
+    };
+
+    if (!ranges) return status;
+
+    // Blood Pressure Status
+    if (measurements.bloodPressure) {
+      const bp = measurements.bloodPressure;
+      const systolic = parseFloat(bp.systolic_pressure || bp.systolic);
+      const diastolic = parseFloat(bp.diastolic_pressure || bp.diastolic);
+      
+      if (!isNaN(systolic) && !isNaN(diastolic)) {
+        const bpRanges = ranges.blood_pressure || {};
+        const isHigh = systolic >= (bpRanges.high?.systolic?.min || 140) || 
+                       diastolic >= (bpRanges.high?.diastolic?.min || 90);
+        const isLow = systolic <= (bpRanges.low?.systolic?.max || 90) || 
+                      diastolic <= (bpRanges.low?.diastolic?.max || 60);
+        
+        if (isHigh) status.bloodPressure = 'high';
+        else if (isLow) status.bloodPressure = 'low';
+        else status.bloodPressure = 'normal';
+      }
+    }
+
+    // Blood Glucose Status
+    if (measurements.bloodGlucose) {
+      const glucose = parseFloat(measurements.bloodGlucose.value || measurements.bloodGlucose.blood_glucose_value_1);
+      
+      if (!isNaN(glucose) && glucose > 0) {
+        const glucoseRanges = ranges.blood_glucose || {};
+        const isHigh = glucose >= (glucoseRanges.high?.min || 126);
+        const isLow = glucose <= (glucoseRanges.low?.max || 70);
+        
+        if (isHigh) status.bloodGlucose = 'high';
+        else if (isLow) status.bloodGlucose = 'low';
+        else status.bloodGlucose = 'normal';
+      }
+    }
+
+    // Weight Status (based on BMI)
+    if (measurements.weight) {
+      const weight = parseFloat(measurements.weight.value);
+      if (!isNaN(weight) && weight > 0) {
+        // Assuming average height of 1.7m for BMI calculation
+        // Weight is in lbs, convert to kg first: weight_lbs / 2.20462 = weight_kg
+        const weightKg = weight / 2.20462;
+        const bmi = weightKg / (1.7 * 1.7);
+        const weightRanges = ranges.weight || {};
+        const isHigh = bmi >= (weightRanges.high_bmi?.min || 30);
+        const isLow = bmi <= (weightRanges.low_bmi?.max || 18.5);
+        
+        if (isHigh) status.weight = 'high';
+        else if (isLow) status.weight = 'low';
+        else status.weight = 'normal';
+      }
+    }
+
+    return status;
+  };
+
+  // Get color based on vitals status
+  // HIGH = RED, LOW = YELLOW, NORMAL = GREEN
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'high':
+        return '#EF4444'; // Red
+      case 'low':
+        return '#F59E0B'; // Yellow/Orange
+      case 'normal':
+      default:
+        return '#10B981'; // Green
+    }
+  };
+
   // Function to fetch patient data and vitals from the API using getPatientDetails
   const fetchPatientData = async () => {
     try {
@@ -323,7 +429,14 @@ export default function Home({ navigation }) {
       if (userData) {
         const user = JSON.parse(userData);
         practiceId = user.practice_id;
-        patientId = user.patient_id || user.id;
+        // Use user_id (user.id) instead of patient_id string for API calls
+        // The API endpoint expects numeric ID, not the patient_id string
+        patientId = user.id || user.user_id; // Use user.id (user_id) as primary
+        
+        // If we have user.id, make sure it's stored correctly (override any old string patient_id)
+        if (user.id && !isNaN(user.id)) {
+          await AsyncStorage.setItem('patientId', String(user.id));
+        }
       }
       
       // If not in user data, try separate storage
@@ -333,13 +446,20 @@ export default function Home({ navigation }) {
       }
       if (!patientId) {
         const storedPatientId = await AsyncStorage.getItem('patientId');
-        patientId = storedPatientId;
+        // Only use if it's numeric (user_id), not a string patient_id
+        if (storedPatientId && !isNaN(storedPatientId) && storedPatientId !== '') {
+          patientId = storedPatientId;
+        } else if (storedPatientId && isNaN(storedPatientId)) {
+          // Clear invalid string patient_id and fetch from API
+          console.log('⚠️ Found invalid string patient_id, clearing and fetching from API...');
+          await AsyncStorage.removeItem('patientId');
+        }
       }
       
       // If still not found, try to fetch from API
       if (!practiceId || !patientId) {
         try {
-          console.log('Fetching user data from API to get practice_id and patient_id...');
+          console.log('Fetching user data from API to get practice_id and user_id...');
           const userResult = await apiService.getCurrentUser();
           if (userResult && userResult.data) {
             const user = userResult.data.user || userResult.data;
@@ -353,13 +473,14 @@ export default function Home({ navigation }) {
                 await AsyncStorage.setItem('user', JSON.stringify(parsedUser));
               }
             }
-            if (user.patient_id || user.id) {
-              patientId = String(user.patient_id || user.id);
+            // Use user.id (user_id) for API calls, not patient_id string
+            if (user.id) {
+              patientId = String(user.id);
               await AsyncStorage.setItem('patientId', patientId);
               // Update user data in AsyncStorage
               if (userData) {
                 const parsedUser = JSON.parse(userData);
-                parsedUser.patient_id = user.patient_id || user.id;
+                parsedUser.id = user.id;
                 await AsyncStorage.setItem('user', JSON.stringify(parsedUser));
               }
             }
@@ -369,24 +490,51 @@ export default function Home({ navigation }) {
         }
       }
       
+      // Silently return null if IDs not found (don't show error)
       if (!practiceId || !patientId) {
-        console.error('Practice ID or Patient ID not found in user data or API');
+        console.log('⚠️ Practice ID or Patient ID not found - skipping vitals fetch');
         return null;
       }
   
       // Use getPatientDetails endpoint which returns all latest vitals at once
       console.log('📊 Fetching patient details with latest vitals...');
-      const detailsResult = await apiService.getPatientDetails(practiceId, patientId);
+      console.log('🔍 Using practiceId:', practiceId, 'patientId:', patientId);
       
-      if (!detailsResult || !detailsResult.data || !detailsResult.data.success) {
-        console.error('Failed to fetch patient details');
+      let latestMeasurements = {};
+      
+      try {
+        const detailsResult = await apiService.getPatientDetails(practiceId, patientId);
+        console.log('✅ API Response received:', JSON.stringify(detailsResult, null, 2));
+        
+        if (!detailsResult || !detailsResult.success) {
+          console.error('❌ API returned unsuccessful response:', detailsResult);
+          return null;
+        }
+        
+        const patientData = detailsResult.data || detailsResult;
+        const patient = patientData.patient || patientData;
+        
+        // Store patients_table_id for future measurement API calls
+        if (patient && (patient.patients_table_id || patient.id)) {
+          const patientsTableId = String(patient.patients_table_id || patient.id);
+          await AsyncStorage.setItem('patientsTableId', patientsTableId);
+          await AsyncStorage.setItem('patientDetails', JSON.stringify(patient));
+          console.log('💾 Stored patients_table_id:', patientsTableId);
+        }
+        
+        latestMeasurements = patientData.latest_measurements || {};
+        
+        console.log('📋 Received latest measurements:', JSON.stringify(latestMeasurements, null, 2));
+        
+        if (!latestMeasurements || Object.keys(latestMeasurements).length === 0) {
+          console.warn('⚠️ No measurements found in response. Patient may not have any vitals data yet.');
+        }
+      } catch (apiError) {
+        console.error('❌ Error calling getPatientDetails API:', apiError);
+        console.error('Error message:', apiError.message);
+        console.error('Error stack:', apiError.stack);
         return null;
       }
-      
-      const patientData = detailsResult.data.data;
-      const latestMeasurements = patientData.latest_measurements || {};
-      
-      console.log('📋 Received latest measurements:', latestMeasurements);
       
       const processedMeasurements = { 
         bloodPressure: null, 
@@ -396,6 +544,7 @@ export default function Home({ navigation }) {
       
       // Process Blood Pressure
       if (latestMeasurements.blood_pressure) {
+        console.log('✅ Found blood pressure data');
         const bp = latestMeasurements.blood_pressure;
         processedMeasurements.bloodPressure = {
           systolic_pressure: bp.systolic_pressure || '--',
@@ -406,22 +555,44 @@ export default function Home({ navigation }) {
       }
       
       // Process Blood Glucose
-      if (latestMeasurements.blood_glucose) {
+      if (latestMeasurements.blood_glucose && latestMeasurements.blood_glucose !== null) {
+        console.log('✅ Found blood glucose data:', JSON.stringify(latestMeasurements.blood_glucose, null, 2));
         const bg = latestMeasurements.blood_glucose;
+        const bgValue = bg.blood_glucose_value_1;
+        console.log('🔍 Blood glucose value_1:', bgValue, 'Type:', typeof bgValue);
+        
+        // Handle 0 as a valid value (0 is falsy but valid)
+        const displayValue = (bgValue !== null && bgValue !== undefined && bgValue !== '') 
+          ? String(bgValue) 
+          : '--';
+        
         processedMeasurements.bloodGlucose = {
-          value: bg.blood_glucose_value_1 || '--',
+          value: displayValue,
           measure_new_date_time: bg.measure_new_date_time || bg.measure_date_time || bg.created_at || '--'
         };
+        console.log('✅ Processed blood glucose:', processedMeasurements.bloodGlucose);
+      } else {
+        console.log('ℹ️ No blood glucose data available. latestMeasurements.blood_glucose is:', latestMeasurements.blood_glucose);
       }
       
       // Process Weight
-      if (latestMeasurements.weight) {
+      if (latestMeasurements.weight && latestMeasurements.weight !== null) {
+        console.log('✅ Found weight data:', JSON.stringify(latestMeasurements.weight, null, 2));
         const weight = latestMeasurements.weight;
-        let weightValue = weight.weight || weight.weight_value || '--';
+        let weightValue = weight.weight !== null && weight.weight !== undefined ? weight.weight : (weight.weight_value || null);
+        console.log('🔍 Weight value:', weightValue, 'Type:', typeof weightValue);
         
-        // Convert kg to lbs if needed (weight is typically stored in kg in database)
-        if (weightValue !== '--' && typeof weightValue === 'number') {
-          weightValue = (parseFloat(weightValue) * 2.20462).toFixed(1);
+        // Handle null/undefined/empty
+        if (weightValue === null || weightValue === undefined || weightValue === '') {
+          weightValue = '--';
+        } else {
+          // Convert kg to lbs if needed (weight is typically stored in kg in database)
+          const numValue = parseFloat(weightValue);
+          if (!isNaN(numValue) && numValue > 0) {
+            weightValue = (numValue * 2.20462).toFixed(1);
+          } else {
+            weightValue = String(weightValue);
+          }
         }
         
         processedMeasurements.weight = {
@@ -429,18 +600,121 @@ export default function Home({ navigation }) {
           measure_new_date_time: weight.measure_new_date_time || weight.measure_date_time || weight.created_at || '--',
           unit: 'lb'
         };
+        console.log('✅ Processed weight:', processedMeasurements.weight);
+      } else {
+        console.log('ℹ️ No weight data available. latestMeasurements.weight is:', latestMeasurements.weight);
       }
   
       setMeasurements(processedMeasurements);
       console.log('✅ Latest vitals updated:', processedMeasurements);
       
+      // Fetch practice ranges if not already loaded
+      if (!practiceRanges && practiceId) {
+        const ranges = await fetchPracticeRanges(practiceId);
+        if (ranges) {
+          // Determine vitals status based on ranges
+          const status = determineVitalsStatus(processedMeasurements, ranges);
+          setVitalsStatus(status);
+          console.log('🎨 Vitals status determined:', status);
+        }
+      } else if (practiceRanges) {
+        // Determine vitals status if ranges are already loaded
+        const status = determineVitalsStatus(processedMeasurements, practiceRanges);
+        setVitalsStatus(status);
+        console.log('🎨 Vitals status determined:', status);
+      }
+      
       // Return data object for notification processing
-      return { measurements: processedMeasurements };
+      return { measurements: processedMeasurements, practiceId };
     } catch (error) {
       console.error('❌ Failed to fetch patient data:', error);
       return null;
     }
   };
+
+  // Load data on initial mount
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        console.log('🏠 Home screen mounted, loading initial data...');
+        setTimeBasedGreeting();
+        
+        // Wait a bit to ensure user data is available after login
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Load user name and get practiceId - try multiple times if needed
+        let userData = await AsyncStorage.getItem('user');
+        let practiceId = null;
+        let patientId = null;
+        let retries = 0;
+        const maxRetries = 3;
+        
+        // Retry logic to ensure user data is loaded
+        while ((!userData || !practiceId || !patientId) && retries < maxRetries) {
+          if (!userData) {
+            userData = await AsyncStorage.getItem('user');
+          }
+          
+          if (userData) {
+            const parsed = JSON.parse(userData);
+            const fullName = parsed.first_name && parsed.last_name
+              ? `${parsed.first_name} ${parsed.last_name}`
+              : parsed.name || parsed.username || '';
+            setUserName(fullName);
+            practiceId = parsed.practice_id || await AsyncStorage.getItem('practiceId');
+            patientId = parsed.id || parsed.patient_id || await AsyncStorage.getItem('patientId');
+          }
+          
+          // If still missing, try fetching from API
+          if ((!practiceId || !patientId) && retries < maxRetries - 1) {
+            try {
+              const userResult = await apiService.getCurrentUser();
+              const user = userResult?.data?.user || userResult?.user || userResult?.data || null;
+              if (user) {
+                if (user.practice_id) {
+                  practiceId = String(user.practice_id);
+                  await AsyncStorage.setItem('practiceId', practiceId);
+                }
+                if (user.id) {
+                  patientId = String(user.id);
+                  await AsyncStorage.setItem('patientId', patientId);
+                }
+              }
+            } catch (apiError) {
+              console.log('⚠️ Could not fetch user from API on retry:', apiError.message);
+            }
+          }
+          
+          if (!practiceId || !patientId) {
+            retries++;
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            break;
+          }
+        }
+        
+        // Fetch practice ranges first (needed for color coding)
+        if (practiceId) {
+          await fetchPracticeRanges(practiceId);
+        }
+        
+        // Fetch patient data - now IDs should be available
+        const patientData = await fetchPatientData();
+        
+        // Process notifications with fresh patient data
+        if (patientData) {
+          await processNotifications(patientData);
+        }
+        
+        // Now fetch badge count
+        await fetchUnreadCount();
+      } catch (e) {
+        console.error('❌ Error loading initial data:', e);
+      }
+    };
+    
+    loadInitialData();
+  }, []); // Run once on mount
 
   // Fetch patient data and load user name when the screen comes into focus
   // Also set up polling for real-time updates
@@ -448,7 +722,7 @@ export default function Home({ navigation }) {
     React.useCallback(() => {
       const loadData = async () => {
         try {
-          console.log('🏠 Home screen focused, loading data...');
+          console.log('🏠 Home screen focused, refreshing data...');
           setTimeBasedGreeting();
           
           // Load user name
@@ -461,7 +735,7 @@ export default function Home({ navigation }) {
             setUserName(fullName);
           }
           
-          // Fetch patient data FIRST
+          // Fetch patient data FIRST - this will update measurements state
           const patientData = await fetchPatientData();
           
           // Process notifications with fresh patient data
@@ -477,7 +751,7 @@ export default function Home({ navigation }) {
         }
       };
       
-      // Load data immediately
+      // Load data immediately when screen comes into focus
       loadData();
       
       // Set up polling for real-time updates:
@@ -565,42 +839,86 @@ export default function Home({ navigation }) {
   };
 
   // Render card with SWAPPED positions: "days ago" ABOVE, date/time BELOW
-  const renderCard = (label, data, unit, openList, openSummary, type) => (
-    <View style={[styles(scaleWidth, scaleHeight, scaleFont).card, !data && { opacity: 0.5 }]}>
+  // Now includes color coding: HIGH = RED, LOW = YELLOW, NORMAL = GREEN
+  const renderCard = (label, data, unit, openList, openSummary, type) => {
+    // Show card even if data is null (for BG and Weight when no data exists)
+    // Just show "No data available" instead of hiding the card
+    const hasData = data !== null && data !== undefined;
+    
+    // Get status for this vital type
+    const status = vitalsStatus[type] || 'normal';
+    const statusColor = getStatusColor(status);
+    
+    // Border color: Red for high, Yellow for low, Green for normal, Gray if no data
+    const borderColor = hasData ? statusColor : '#E5E7EB';
+    
+    return (
+    <View style={[
+      styles(scaleWidth, scaleHeight, scaleFont).card, 
+      !hasData && { opacity: 0.6 },
+      { borderLeftWidth: 4, borderLeftColor: borderColor }
+    ]}>
       <View style={styles(scaleWidth, scaleHeight, scaleFont).cardHeader}>
         <View style={styles(scaleWidth, scaleHeight, scaleFont).cardHeaderLeft}>
           <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardLabel}>{label}</Text>
           
+          {/* Status badge for high/low readings */}
+          {hasData && status !== 'normal' && (
+            <View style={[styles(scaleWidth, scaleHeight, scaleFont).statusBadge, { backgroundColor: statusColor }]}>
+              <Text style={styles(scaleWidth, scaleHeight, scaleFont).statusBadgeText}>
+                {status === 'high' ? 'HIGH' : 'LOW'}
+              </Text>
+            </View>
+          )}
+          
           {/* "Days ago" text ABOVE value (SWAPPED POSITION) */}
           <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardTimeAgo}>
-            {data ? formatTimeAgo(data.measure_new_date_time) : 'No data available'}
+            {hasData ? formatTimeAgo(data.measure_new_date_time) : 'No data available'}
           </Text>
         </View>
       </View>
       
       <View style={styles(scaleWidth, scaleHeight, scaleFont).valueContainer}>
-        <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardMainValue}>
-          {data?.value || data?.systolic_pressure || '--'}
-          {data?.diastolic_pressure && <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardSlash}>/</Text>}
-          {data?.diastolic_pressure && <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardSecondValue}>{data.diastolic_pressure}</Text>}
+        <Text style={[
+          styles(scaleWidth, scaleHeight, scaleFont).cardMainValue,
+          hasData && status !== 'normal' && { color: statusColor }
+        ]}>
+          {/* Handle 0 as valid value - check for null/undefined explicitly */}
+          {hasData && data?.systolic_pressure !== null && data?.systolic_pressure !== undefined 
+            ? data.systolic_pressure 
+            : (hasData && data?.value !== null && data?.value !== undefined && data?.value !== '' 
+              ? data.value 
+              : '--')}
+          {hasData && data?.diastolic_pressure && (
+            <Text style={[
+              styles(scaleWidth, scaleHeight, scaleFont).cardSlash,
+              status !== 'normal' && { color: statusColor }
+            ]}>/</Text>
+          )}
+          {hasData && data?.diastolic_pressure && (
+            <Text style={[
+              styles(scaleWidth, scaleHeight, scaleFont).cardSecondValue,
+              status !== 'normal' && { color: statusColor }
+            ]}>{data.diastolic_pressure}</Text>
+          )}
         </Text>
       </View>
       
       {/* Real date and time BELOW value (SWAPPED POSITION) */}
       <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardDateTime}>
-        {data ? formatDateTime(data.measure_new_date_time) : 'No data'}
+        {hasData ? formatDateTime(data.measure_new_date_time) : 'No data available'}
       </Text>
 
       {/* Bottom section with UNIT on left and ICONS on right */}
       <View style={styles(scaleWidth, scaleHeight, scaleFont).cardFooter}>
         <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardUnit}>{unit}</Text>
         <View style={styles(scaleWidth, scaleHeight, scaleFont).cardActions}>
-          <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!data} onPress={() => openList(type)}>
+          <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!hasData} onPress={() => openList(type)}>
             <View style={styles(scaleWidth, scaleHeight, scaleFont).listCircle}>
               <Image source={require('../../android/app/src/assets/images/list-icon.png')} style={styles(scaleWidth, scaleHeight, scaleFont).listIcon} />
             </View>
           </TouchableOpacity>
-          <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!data} onPress={() => openSummary(type)}>
+          <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!hasData} onPress={() => openSummary(type)}>
             <View style={[styles(scaleWidth, scaleHeight, scaleFont).chartCircle, { backgroundColor: PRIMARY_ACCENT }]}>
               <Image source={require('../../android/app/src/assets/images/bar-chart.png')} style={styles(scaleWidth, scaleHeight, scaleFont).chartIcon} />
             </View>
@@ -608,7 +926,8 @@ export default function Home({ navigation }) {
         </View>
       </View>
     </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaProvider>
@@ -888,5 +1207,18 @@ const styles = (scaleWidth, scaleHeight, scaleFont) => StyleSheet.create({
     width: scaleWidth(14),
     height: scaleWidth(14),
     tintColor: colors.textWhite,
+  },
+  statusBadge: {
+    paddingHorizontal: scaleWidth(8),
+    paddingVertical: scaleHeight(2),
+    borderRadius: scaleWidth(4),
+    marginTop: scaleHeight(4),
+    alignSelf: 'flex-start',
+  },
+  statusBadgeText: {
+    fontSize: scaleFont(10),
+    fontWeight: '700',
+    color: 'white',
+    textTransform: 'uppercase',
   },
 });

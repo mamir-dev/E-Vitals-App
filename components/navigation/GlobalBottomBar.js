@@ -89,7 +89,7 @@ export default function GlobalBottomBar({ navigation }) {
     >
       {/* Tab Screens */}
       <Tab.Screen name="Profile" component={ProfileScreen} />
-      <Tab.Screen name="Appointment" component={Appointment} />
+      {/* <Tab.Screen name="Appointment" component={Appointment} /> */}
       <Tab.Screen name="Home" component={Home} />
       <Tab.Screen name="Agent" component={ChatScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />

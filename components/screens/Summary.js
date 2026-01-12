@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,8 @@ import Svg, { Line, Path } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, fonts } from '../../config/globall';
+import apiService from '../../services/apiService';
+import { API_CONFIG } from '../../config/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -137,14 +139,61 @@ export default function SummaryScreen({ navigation, route }) {
     fetchPatientData();
   }, [route.params]);
 
+  // Refetch data when activeChart changes
+  useEffect(() => {
+    if (patientId) {
+      const dateRangeValue = periodToApiValue[selectedPeriod];
+      console.log('🔄 Active chart changed, fetching data for:', activeChart);
+      fetchGraphData(patientId, dateRangeValue, dateRangeType, fromDate, toDate);
+    }
+  }, [activeChart]);
+
   const fetchPatientData = async () => {
     try {
       setIsLoading(true);
+      
+      // Get practiceId and patients.id (not user_id)
+      let practiceId = null;
+      let patientId = null;
+      
       const userData = await AsyncStorage.getItem('user');
       if (userData) {
         const user = JSON.parse(userData);
-        setPatientId(user.id);
-        fetchGraphData(user.id, periodToApiValue[selectedPeriod], dateRangeType);
+        practiceId = user.practice_id || await AsyncStorage.getItem('practiceId');
+        
+        // Try to get patients.id from stored patient details
+        const storedPatientDetails = await AsyncStorage.getItem('patientDetails');
+        if (storedPatientDetails) {
+          const details = JSON.parse(storedPatientDetails);
+          patientId = details.patients_table_id || details.id || details.patient_id;
+        }
+        
+        // If not found, fetch patient details to get patients.id
+        if (practiceId && user.id && !patientId) {
+          try {
+            const patientDetails = await apiService.getPatientDetails(practiceId, user.id);
+            if (patientDetails && patientDetails.data && patientDetails.data.patient) {
+              const patient = patientDetails.data.patient;
+              patientId = String(patient.patients_table_id || patient.id || user.id);
+              await AsyncStorage.setItem('patientDetails', JSON.stringify(patient));
+            } else {
+              patientId = String(user.id);
+            }
+          } catch (error) {
+            console.log('Could not fetch patient details, using user.id:', error.message);
+            patientId = String(user.id);
+          }
+        } else if (user.id && !patientId) {
+          patientId = String(user.id);
+        }
+      }
+      
+      if (patientId) {
+        setPatientId(patientId);
+        const dateRangeValue = periodToApiValue[selectedPeriod];
+        fetchGraphData(patientId, dateRangeValue, dateRangeType, fromDate, toDate);
+      } else {
+        setIsLoading(false);
       }
     } catch (error) {
       console.error('Error fetching patient data:', error);
@@ -167,56 +216,363 @@ export default function SummaryScreen({ navigation, route }) {
   };
 
   const fetchGraphData = async (id, dateRangeValue, isQuickSelect, startDate = null, endDate = null) => {
+    setIsLoading(true);
     try {
       console.log("📡 Fetching graph data for patient ID:", id);
       console.log("📅 Date range value:", dateRangeValue);
 
-      const token = await AsyncStorage.getItem('authToken');
-      console.log("🔑 Token loaded:", token ? "Yes" : "No");
+      // Get practiceId and patientId (patients.id, not user_id)
+      let practiceId = null;
+      let patientId = id; // This should be patients.id (patients_table_id)
       
-      // Build URL with query parameters
-      let url;
+      const userData = await AsyncStorage.getItem('user');
+      if (userData) {
+        const user = JSON.parse(userData);
+        practiceId = user.practice_id || await AsyncStorage.getItem('practiceId');
+        // Try to get patients.id from stored values
+        const storedPatientsTableId = await AsyncStorage.getItem('patientsTableId');
+        if (storedPatientsTableId) {
+          patientId = storedPatientsTableId;
+        } else {
+          // Try to get from stored patient details
+          const storedPatientDetails = await AsyncStorage.getItem('patientDetails');
+          if (storedPatientDetails) {
+            const details = JSON.parse(storedPatientDetails);
+            patientId = details.patients_table_id || details.id || details.patient_id;
+          }
+          // Fallback to user.id if patients.id not found
+          if (!patientId) {
+            patientId = user.id || user.patient_id || await AsyncStorage.getItem('patientId');
+          }
+        }
+      }
+      
+      // If not found, fetch patient details to get patients.id
+      if (!practiceId || !patientId) {
+        try {
+          const userResult = await apiService.getCurrentUser();
+          const user = userResult?.data?.user || userResult?.user || userResult?.data || null;
+          if (user) {
+            if (user.practice_id) {
+              practiceId = String(user.practice_id);
+              await AsyncStorage.setItem('practiceId', practiceId);
+            }
+            // Now get patient details to find patients.id
+            if (practiceId && user.id) {
+              const patientDetails = await apiService.getPatientDetails(practiceId, user.id);
+              if (patientDetails && patientDetails.data && patientDetails.data.patient) {
+                const patient = patientDetails.data.patient;
+                // Use patients_table_id or id from patient details (this is what measurement APIs need)
+                patientId = String(patient.patients_table_id || patient.id || user.id);
+                // Store patient details and patients_table_id for future use
+                await AsyncStorage.setItem('patientDetails', JSON.stringify(patient));
+                await AsyncStorage.setItem('patientsTableId', patientId);
+              } else {
+                // Fallback to user.id
+                patientId = String(user.id);
+              }
+              await AsyncStorage.setItem('patientId', patientId);
+            }
+          }
+        } catch (apiError) {
+          console.log('⚠️ Could not fetch patient details from API:', apiError.message);
+        }
+      }
+      
+      if (!practiceId || !patientId) {
+        throw new Error('Practice ID or Patient ID missing');
+      }
+      
+      console.log('📊 Fetching graph data for:', { practiceId, patientId, activeChart, dateRangeValue });
+      
+      // Calculate date range based on period selection
+      const now = new Date();
+      let fromDateStr = null;
+      let toDateStr = null;
+      
       if (isQuickSelect === 'range') {
-          url = `https://evitals.life/api/blood-pressure-graph/${id}?radioIDBloodPressure=date_range&dateRange=${dateRangeValue}`;
+        // Calculate date range based on periodToApiValue
+        const daysMap = {
+          1: 30,   // Last month
+          2: 14,   // Last 2 weeks
+          3: 7,    // Last 7 days
+          4: 365,  // Last year
+          5: 90,   // Last 90 Days
+          6: null  // All
+        };
+        
+        const days = daysMap[dateRangeValue];
+        if (days) {
+          const startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - days);
+          fromDateStr = startDate.toISOString().split('T')[0];
+          toDateStr = now.toISOString().split('T')[0];
+        }
       } else {
-          url = `https://evitals.life/api/blood-pressure-graph/${id}?radioIDBloodPressure=date&start_date=${startDate}&end_date=${endDate}`;
+        // Custom date range
+        if (startDate && endDate) {
+          fromDateStr = startDate;
+          toDateStr = endDate;
+        } else if (dateRangeValue === 7 && fromDate && toDate) {
+          fromDateStr = fromDate;
+          toDateStr = toDate;
+        } else if (dateRangeValue === 7 && (!fromDate || !toDate)) {
+          console.log("⚠️ Custom range selected but dates are missing");
+          Alert.alert('Error', 'Please select both start and end dates for custom range');
+          setIsLoading(false);
+          return;
+        }
       }
       
-      // Add custom date range if selected
-      if (dateRangeValue === 7 && fromDate && toDate) {
-        url += `&fromDate=${fromDate}&toDate=${toDate}`;
-        console.log("📆 Custom date range API URL:", url);
-      } else if (dateRangeValue === 7 && (!fromDate || !toDate)) {
-        console.log("⚠️ Custom range selected but dates are missing");
-        Alert.alert('Error', 'Please select both start and end dates for custom range');
-        setIsLoading(false);
-        return;
-      } else {
-        console.log("🌍 API URL:", url);
-      }
+      // Fetch measurements based on active chart type
+      console.log(`📡 Fetching ${activeChart} measurements for graph...`);
+      console.log("📅 Date range:", fromDateStr, 'to', toDateStr);
       
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      console.log("📥 Response status:", response.status);
-
-      if (!response.ok) {
-        console.error("❌ Failed to fetch graph data. Status:", response.status);
-        throw new Error('Failed to fetch graph data');
+      try {
+        let measurementsResult = null;
+        let measurements = [];
+        
+        // Fetch data based on chart type
+        if (activeChart === 'bloodPressure') {
+          measurementsResult = await apiService.getBloodPressure(practiceId, patientId, {
+            fromDate: fromDateStr,
+            toDate: toDateStr,
+          });
+        } else if (activeChart === 'bloodGlucose') {
+          measurementsResult = await apiService.getBloodGlucose(practiceId, patientId, {
+            fromDate: fromDateStr,
+            toDate: toDateStr,
+          });
+        } else if (activeChart === 'weight') {
+          measurementsResult = await apiService.getWeight(practiceId, patientId, {
+            fromDate: fromDateStr,
+            toDate: toDateStr,
+          });
+        }
+        
+        console.log(`✅ ${activeChart} API Response received:`, measurementsResult);
+        
+        if (measurementsResult && measurementsResult.success && measurementsResult.data) {
+          // Backend returns data directly in result.data array (not nested in measurements)
+          measurements = Array.isArray(measurementsResult.data) 
+            ? measurementsResult.data 
+            : (measurementsResult.data?.measurements ? (Array.isArray(measurementsResult.data.measurements) ? measurementsResult.data.measurements : [measurementsResult.data.measurements]) : []);
+          
+          console.log(`📋 ${activeChart} measurements count:`, measurements.length);
+          console.log(`📋 Sample measurement:`, measurements[0]);
+          
+          if (measurements.length === 0) {
+            console.log('⚠️ No measurements found, setting empty graph data');
+            setApiData({ 
+              success: true, 
+              data: {
+                dailyTrendDate: [],
+                dailyTrendGraphData: activeChart === 'bloodPressure' ? { systolic: [], diastolic: [] } : { values: [] },
+                MeanChart: [],
+                xAxisData: []
+              } 
+            });
+            setIsLoading(false);
+            return;
+          }
+          
+          // Transform measurements into graph data format based on chart type
+          let graphData = {
+            success: true,
+            data: {
+              dailyTrendDate: [],
+              dailyTrendGraphData: {},
+              MeanChart: [],
+              xAxisData: []
+            }
+          };
+          
+          // Sort measurements by date
+          measurements.sort((a, b) => {
+            const dateA = new Date(a.measure_new_date_time || a.measure_date_time || a.created_at);
+            const dateB = new Date(b.measure_new_date_time || b.measure_date_time || b.created_at);
+            return dateA - dateB;
+          });
+          
+          console.log(`📅 Sorted measurements, first date:`, measurements[0]?.measure_new_date_time || measurements[0]?.measure_date_time || measurements[0]?.created_at);
+          console.log(`📅 Last date:`, measurements[measurements.length - 1]?.measure_new_date_time || measurements[measurements.length - 1]?.measure_date_time || measurements[measurements.length - 1]?.created_at);
+          
+          // Group by date and calculate daily averages
+          const dailyData = {};
+          let processedCount = 0;
+          measurements.forEach(measurement => {
+            const dateStr = measurement.measure_new_date_time || measurement.measure_date_time || measurement.created_at;
+            if (!dateStr) {
+              console.log('⚠️ Measurement missing date:', measurement);
+              return;
+            }
+            
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) {
+              console.log('⚠️ Invalid date in measurement:', dateStr, measurement);
+              return;
+            }
+            
+            const dateKey = date.toISOString().split('T')[0];
+            processedCount++;
+            
+            if (!dailyData[dateKey]) {
+              dailyData[dateKey] = {
+                dates: [],
+                values: []
+              };
+            }
+            
+            if (activeChart === 'bloodPressure') {
+              const systolic = parseFloat(measurement.systolic_pressure || measurement.systolic || 0);
+              const diastolic = parseFloat(measurement.diastolic_pressure || measurement.diastolic || 0);
+              
+              if (!dailyData[dateKey].systolic) dailyData[dateKey].systolic = [];
+              if (!dailyData[dateKey].diastolic) dailyData[dateKey].diastolic = [];
+              
+              // Allow 0 values but filter out NaN
+              if (!isNaN(systolic)) {
+                dailyData[dateKey].systolic.push(systolic);
+              }
+              if (!isNaN(diastolic)) {
+                dailyData[dateKey].diastolic.push(diastolic);
+              }
+            } else if (activeChart === 'bloodGlucose') {
+              const glucose = parseFloat(measurement.blood_glucose_value_1 || measurement.blood_glucose_value || measurement.value || 0);
+              // Allow 0 values but filter out NaN
+              if (!isNaN(glucose)) {
+                dailyData[dateKey].values.push(glucose);
+              }
+            } else if (activeChart === 'weight') {
+              let weight = parseFloat(measurement.weight || measurement.weight_value || measurement.value || 0);
+              // Convert kg to lbs for display (allow 0 values)
+              if (!isNaN(weight)) {
+                weight = weight * 2.20462;
+                dailyData[dateKey].values.push(weight);
+              }
+            }
+            
+            dailyData[dateKey].dates.push(date);
+          });
+          
+          // Initialize graph data structure
+          if (activeChart === 'bloodPressure') {
+            graphData.data.dailyTrendGraphData = { systolic: [], diastolic: [] };
+          } else {
+            graphData.data.dailyTrendGraphData = { values: [] };
+          }
+          
+          // Create trend data (daily averages)
+          const sortedDates = Object.keys(dailyData).sort();
+          console.log(`📅 Processing ${sortedDates.length} days of data for ${activeChart} (processed ${processedCount} measurements)`);
+          
+          if (sortedDates.length === 0) {
+            console.log('⚠️ No dates found in dailyData, measurements might be empty or invalid');
+            setApiData({ 
+              success: true, 
+              data: {
+                dailyTrendDate: [],
+                dailyTrendGraphData: activeChart === 'bloodPressure' ? { systolic: [], diastolic: [] } : { values: [] },
+                MeanChart: [],
+                xAxisData: []
+              } 
+            });
+            setIsLoading(false);
+            return;
+          }
+          
+          sortedDates.forEach(dateKey => {
+            const dayData = dailyData[dateKey];
+            graphData.data.dailyTrendDate.push(dateKey);
+            
+            if (activeChart === 'bloodPressure') {
+              const avgSystolic = dayData.systolic && dayData.systolic.length > 0
+                ? dayData.systolic.reduce((a, b) => a + b, 0) / dayData.systolic.length
+                : null;
+              const avgDiastolic = dayData.diastolic && dayData.diastolic.length > 0
+                ? dayData.diastolic.reduce((a, b) => a + b, 0) / dayData.diastolic.length
+                : null;
+              
+              // Only push if we have valid averages
+              if (avgSystolic !== null && !isNaN(avgSystolic)) {
+                graphData.data.dailyTrendGraphData.systolic.push(avgSystolic);
+              } else {
+                graphData.data.dailyTrendGraphData.systolic.push(0);
+              }
+              
+              if (avgDiastolic !== null && !isNaN(avgDiastolic)) {
+                graphData.data.dailyTrendGraphData.diastolic.push(avgDiastolic);
+              } else {
+                graphData.data.dailyTrendGraphData.diastolic.push(0);
+              }
+              
+              // Mean chart data (same as trend for now)
+              graphData.data.MeanChart.push({
+                avgOfSystolic: avgSystolic !== null && !isNaN(avgSystolic) ? avgSystolic : 0,
+                avgOfDiastolic: avgDiastolic !== null && !isNaN(avgDiastolic) ? avgDiastolic : 0
+              });
+            } else {
+              const avgValue = dayData.values && dayData.values.length > 0
+                ? dayData.values.reduce((a, b) => a + b, 0) / dayData.values.length
+                : null;
+              
+              // Only push if we have valid average
+              if (avgValue !== null && !isNaN(avgValue)) {
+                graphData.data.dailyTrendGraphData.values.push(avgValue);
+              } else {
+                graphData.data.dailyTrendGraphData.values.push(0);
+              }
+              
+              // Mean chart data (same as trend for now)
+              if (activeChart === 'bloodGlucose') {
+                graphData.data.MeanChart.push({
+                  avgOfGlucose: avgValue !== null && !isNaN(avgValue) ? avgValue : 0
+                });
+              } else if (activeChart === 'weight') {
+                graphData.data.MeanChart.push({
+                  avgOfWeight: avgValue !== null && !isNaN(avgValue) ? avgValue : 0
+                });
+              }
+            }
+            
+            graphData.data.xAxisData.push({
+              hAxis: dateKey
+            });
+          });
+          
+          console.log(`✅ Processed graph data:`, {
+            dates: graphData.data.dailyTrendDate.length,
+            systolic: activeChart === 'bloodPressure' ? graphData.data.dailyTrendGraphData.systolic.length : 'N/A',
+            diastolic: activeChart === 'bloodPressure' ? graphData.data.dailyTrendGraphData.diastolic.length : 'N/A',
+            values: activeChart !== 'bloodPressure' ? graphData.data.dailyTrendGraphData.values.length : 'N/A',
+            sampleData: activeChart === 'bloodPressure' 
+              ? { systolic: graphData.data.dailyTrendGraphData.systolic.slice(0, 3), diastolic: graphData.data.dailyTrendGraphData.diastolic.slice(0, 3) }
+              : { values: graphData.data.dailyTrendGraphData.values.slice(0, 3) }
+          });
+          
+          console.log(`✅ ${activeChart} graph data processed from measurements:`, {
+            dailyTrendDateCount: graphData.data.dailyTrendDate.length,
+            dailyTrendGraphData: graphData.data.dailyTrendGraphData,
+            MeanChartCount: graphData.data.MeanChart.length,
+            xAxisDataCount: graphData.data.xAxisData.length
+          });
+          setApiData(graphData);
+        } else {
+          console.log("⚠️ No measurements data in response");
+          setApiData({ success: true, data: {
+            dailyTrendDate: [],
+            dailyTrendGraphData: {},
+            MeanChart: [],
+            xAxisData: []
+          } });
+        }
+      } catch (measurementsError) {
+        console.error("❌ Error fetching measurements:", measurementsError);
+        throw new Error('Failed to fetch graph data: ' + measurementsError.message);
       }
-
-      const data = await response.json();
-      console.log("✅ API Response Data received");
-      
-      setApiData(data);
     } catch (error) {
       console.error("🔥 Error fetching graph data:", error);
-      Alert.alert('Error', 'Failed to load graph data');
+      Alert.alert('Error', error.message || 'Failed to load graph data');
     } finally {
       setIsLoading(false);
     }
@@ -229,6 +585,19 @@ export default function SummaryScreen({ navigation, route }) {
       values.push(i);
     }
     return values.reverse();
+  };
+
+  // Helper function to get trend X-axis
+  const getTrendXAxis = (dates) => {
+    if (!dates || !Array.isArray(dates)) return [];
+    const step = Math.max(1, Math.ceil(dates.length / 7));
+    return dates.filter((_, index) => index % step === 0 || index === dates.length - 1);
+  };
+  
+  // Helper function to get mean X-axis
+  const getMeanXAxis = (xAxisData) => {
+    if (!xAxisData || !Array.isArray(xAxisData)) return [];
+    return xAxisData.map(item => item.hAxis || '');
   };
 
   const getChartData = () => {
@@ -260,78 +629,139 @@ export default function SummaryScreen({ navigation, route }) {
       },
     };
 
-    if (!apiData || activeChart !== 'bloodPressure') {
+    // Process data for all chart types
+    if (!apiData || !apiData.data) {
+      console.log('⚠️ getChartData: No apiData or apiData.data');
       return defaultData[activeChart];
     }
-
-    // Process API data for blood pressure chart - Trend Chart
-    const trendDates = apiData.data?.dailyTrendDate || [];
-    const systolicData = apiData.data?.dailyTrendGraphData?.systolic || [];
-    const diastolicData = apiData.data?.dailyTrendGraphData?.diastolic || [];
     
-    // Create aligned arrays where each date has corresponding data
-    const alignedSystolic = [];
-    const alignedDiastolic = [];
-    
-    trendDates.forEach((date, index) => {
-      if (index < systolicData.length) {
-        const num = parseFloat(systolicData[index]);
-        alignedSystolic.push(isNaN(num) ? 0 : num);
-      } else {
-        alignedSystolic.push(0);
-      }
-      
-      if (index < diastolicData.length) {
-        const num = parseFloat(diastolicData[index]);
-        alignedDiastolic.push(isNaN(num) ? 0 : num);
-      } else {
-        alignedDiastolic.push(0);
-      }
+    console.log('📊 getChartData: Processing chart data for', activeChart, {
+      hasDailyTrendDate: !!apiData.data.dailyTrendDate,
+      dailyTrendDateLength: apiData.data.dailyTrendDate?.length || 0,
+      hasDailyTrendGraphData: !!apiData.data.dailyTrendGraphData,
+      dailyTrendGraphDataKeys: apiData.data.dailyTrendGraphData ? Object.keys(apiData.data.dailyTrendGraphData) : []
     });
 
-    const trendData = {
-      systolic: alignedSystolic,
-      diastolic: alignedDiastolic
-    };
+    // Process API data based on chart type
+    const trendDates = apiData.data?.dailyTrendDate || [];
+    
+    if (activeChart === 'bloodPressure') {
+      const systolicData = apiData.data?.dailyTrendGraphData?.systolic || [];
+      const diastolicData = apiData.data?.dailyTrendGraphData?.diastolic || [];
+      
+      // Create aligned arrays where each date has corresponding data
+      const alignedSystolic = [];
+      const alignedDiastolic = [];
+      
+      trendDates.forEach((date, index) => {
+        if (index < systolicData.length) {
+          const num = parseFloat(systolicData[index]);
+          alignedSystolic.push(isNaN(num) ? 0 : num);
+        } else {
+          alignedSystolic.push(0);
+        }
+        
+        if (index < diastolicData.length) {
+          const num = parseFloat(diastolicData[index]);
+          alignedDiastolic.push(isNaN(num) ? 0 : num);
+        } else {
+          alignedDiastolic.push(0);
+        }
+      });
 
-    // Process API data for blood pressure chart - Mean Chart
-    let meanData = { systolic: [], diastolic: [] };
-    if (apiData.data?.MeanChart && Array.isArray(apiData.data.MeanChart) && apiData.data.MeanChart.length > 0) {
-      meanData = {
-        systolic: apiData.data.MeanChart.map(item => {
-          const num = parseFloat(item.avgOfSystolic || 0);
+      const trendData = {
+        systolic: alignedSystolic,
+        diastolic: alignedDiastolic
+      };
+
+      // Process API data for blood pressure chart - Mean Chart
+      let meanData = { systolic: [], diastolic: [] };
+      if (apiData.data?.MeanChart && Array.isArray(apiData.data.MeanChart) && apiData.data.MeanChart.length > 0) {
+        meanData = {
+          systolic: apiData.data.MeanChart.map(item => {
+            const num = parseFloat(item.avgOfSystolic || 0);
+            return isNaN(num) ? 0 : num;
+          }),
+          diastolic: apiData.data.MeanChart.map(item => {
+            const num = parseFloat(item.avgOfDiastolic || 0);
+            return isNaN(num) ? 0 : num;
+          })
+        };
+      }
+      
+      return {
+        title: 'Blood Pressure',
+        trend: trendData,
+        mean: meanData,
+        colors: { primary: NAVY_BLUE, secondary: '#EF4444' },
+        yAxis: yAxisValues,
+        trendXAxis: getTrendXAxis(trendDates),
+        meanXAxis: getMeanXAxis(apiData.data?.xAxisData),
+        allTrendDates: trendDates
+      };
+    } else if (activeChart === 'bloodGlucose') {
+      const glucoseData = apiData.data?.dailyTrendGraphData?.values || [];
+      const alignedGlucose = trendDates.map((date, index) => {
+        if (index < glucoseData.length) {
+          const num = parseFloat(glucoseData[index]);
           return isNaN(num) ? 0 : num;
-        }),
-        diastolic: apiData.data.MeanChart.map(item => {
-          const num = parseFloat(item.avgOfDiastolic || 0);
+        }
+        return 0;
+      });
+      
+      let meanData = { glucose: [] };
+      if (apiData.data?.MeanChart && Array.isArray(apiData.data.MeanChart) && apiData.data.MeanChart.length > 0) {
+        meanData = {
+          glucose: apiData.data.MeanChart.map(item => {
+            const num = parseFloat(item.avgOfGlucose || 0);
+            return isNaN(num) ? 0 : num;
+          })
+        };
+      }
+      
+      return {
+        title: 'Blood Glucose',
+        trend: { glucose: alignedGlucose },
+        mean: meanData,
+        colors: { primary: NAVY_BLUE },
+        yAxis: [200, 150, 100, 50, 0],
+        trendXAxis: getTrendXAxis(trendDates),
+        meanXAxis: getMeanXAxis(apiData.data?.xAxisData),
+        allTrendDates: trendDates
+      };
+    } else if (activeChart === 'weight') {
+      const weightData = apiData.data?.dailyTrendGraphData?.values || [];
+      const alignedWeight = trendDates.map((date, index) => {
+        if (index < weightData.length) {
+          const num = parseFloat(weightData[index]);
           return isNaN(num) ? 0 : num;
-        })
+        }
+        return 0;
+      });
+      
+      let meanData = { weight: [] };
+      if (apiData.data?.MeanChart && Array.isArray(apiData.data.MeanChart) && apiData.data.MeanChart.length > 0) {
+        meanData = {
+          weight: apiData.data.MeanChart.map(item => {
+            const num = parseFloat(item.avgOfWeight || 0);
+            return isNaN(num) ? 0 : num;
+          })
+        };
+      }
+      
+      return {
+        title: 'Weight',
+        trend: { weight: alignedWeight },
+        mean: meanData,
+        colors: { primary: NAVY_BLUE },
+        yAxis: [200, 175, 150, 125, 100],
+        trendXAxis: getTrendXAxis(trendDates),
+        meanXAxis: getMeanXAxis(apiData.data?.xAxisData),
+        allTrendDates: trendDates
       };
     }
-
-    // Get X-axis labels for trend chart
-    let trendXAxis = [];
-    if (trendDates && Array.isArray(trendDates)) {
-      const step = Math.max(1, Math.ceil(trendDates.length / 7));
-      trendXAxis = trendDates.filter((_, index) => index % step === 0 || index === trendDates.length - 1);
-    }
-
-    // Get X-axis labels for mean chart
-    let meanXAxis = [];
-    if (apiData.data?.xAxisData && Array.isArray(apiData.data.xAxisData)) {
-      meanXAxis = apiData.data.xAxisData.map(item => item.hAxis || '');
-    }
-
-    return {
-      title: 'Blood Pressure',
-      trend: trendData,
-      mean: meanData,
-      colors: { primary: NAVY_BLUE, secondary: '#EF4444' },
-      yAxis: yAxisValues,
-      trendXAxis: trendXAxis,
-      meanXAxis: meanXAxis,
-      allTrendDates: trendDates
-    };
+    
+    return defaultData[activeChart];
   };
 
   const getSortOptions = () => {
@@ -348,7 +778,10 @@ export default function SummaryScreen({ navigation, route }) {
   };
 
   const createPath = (data, chartH, minValue, maxValue) => {
-    if (!data || data.length === 0) return '';
+    if (!data || data.length === 0) {
+      console.log('⚠️ createPath: Empty or no data provided');
+      return '';
+    }
     
     const validData = Array.isArray(data) 
       ? data.map(val => {
@@ -357,11 +790,16 @@ export default function SummaryScreen({ navigation, route }) {
         })
       : [0];
     
+    if (validData.length === 0) {
+      console.log('⚠️ createPath: No valid data after parsing');
+      return '';
+    }
+    
     const xDivisor = Math.max(1, validData.length - 1);
     const range = maxValue - minValue;
     const effectiveRange = range === 0 ? 1 : range;
 
-    return validData
+    const path = validData
       .map((value, index) => {
         const x = (index / xDivisor) * scaleWidth(250);
         const y = chartH - ((value - minValue) / effectiveRange) * chartH;
@@ -369,6 +807,9 @@ export default function SummaryScreen({ navigation, route }) {
         return `${index === 0 ? 'M' : 'L'}${x} ${y}`;
       })
       .join(' ');
+    
+    console.log(`📈 createPath: Created path with ${validData.length} points, path length: ${path.length}`);
+    return path;
   };
 
   const renderXAxis = (xAxisData, isMeanChart = false) => {
@@ -414,8 +855,29 @@ export default function SummaryScreen({ navigation, route }) {
     const currentChart = getChartData();
     const xAxisData = isMeanChart ? currentChart.meanXAxis : currentChart.trendXAxis;
     
-    const maxVal = 200;
-    const minVal = 0;
+    // Debug logging
+    console.log(`📊 Rendering ${isMeanChart ? 'Mean' : 'Trend'} Chart for ${activeChart}:`, {
+      hasData: !!data,
+      dataKeys: data ? Object.keys(data) : [],
+      dataLengths: data ? Object.keys(data).map(key => ({ [key]: Array.isArray(data[key]) ? data[key].length : 'not array' })) : [],
+      xAxisLength: xAxisData?.length || 0,
+      currentChartKeys: Object.keys(currentChart)
+    });
+    
+    // Adjust max/min values based on chart type
+    let maxVal = 200;
+    let minVal = 0;
+    
+    if (activeChart === 'bloodGlucose') {
+      maxVal = 200;
+      minVal = 0;
+    } else if (activeChart === 'weight') {
+      maxVal = 200;
+      minVal = 100;
+    } else {
+      maxVal = 200;
+      minVal = 0;
+    }
 
     return (
       <View style={styles.chartWrapper}>
@@ -451,35 +913,57 @@ export default function SummaryScreen({ navigation, route }) {
                 );
               })}
 
-              {activeChart === 'bloodPressure' && data && data.systolic && data.diastolic && data.systolic.length > 0 && data.diastolic.length > 0 && (
+              {activeChart === 'bloodPressure' && data && data.systolic && data.diastolic && (
                 <>
+                  {data.systolic.length > 0 && (
+                    <Path
+                      d={createPath(data.systolic, chartHeight, minVal, maxVal)}
+                      fill="none"
+                      stroke={currentChart.colors.primary}
+                      strokeWidth="2"
+                    />
+                  )}
+                  {data.diastolic.length > 0 && (
+                    <Path
+                      d={createPath(data.diastolic, chartHeight, minVal, maxVal)}
+                      fill="none"
+                      stroke={currentChart.colors.secondary}
+                      strokeWidth="2"
+                    />
+                  )}
+                </>
+              )}
+
+              {activeChart === 'bloodGlucose' && data && data.glucose && (
+                data.glucose.length > 0 ? (
                   <Path
-                    d={createPath(data.systolic, chartHeight, minVal, maxVal)}
+                    d={createPath(
+                      data.glucose,
+                      chartHeight,
+                      minVal,
+                      maxVal
+                    )}
                     fill="none"
                     stroke={currentChart.colors.primary}
                     strokeWidth="2"
                   />
+                ) : null
+              )}
+              
+              {activeChart === 'weight' && data && data.weight && (
+                data.weight.length > 0 ? (
                   <Path
-                    d={createPath(data.diastolic, chartHeight, minVal, maxVal)}
+                    d={createPath(
+                      data.weight,
+                      chartHeight,
+                      minVal,
+                      maxVal
+                    )}
                     fill="none"
-                    stroke={currentChart.colors.secondary}
+                    stroke={currentChart.colors.primary}
                     strokeWidth="2"
                   />
-                </>
-              )}
-
-              {(activeChart === 'bloodGlucose' || activeChart === 'weight') && data && (
-                <Path
-                  d={createPath(
-                    activeChart === 'bloodGlucose' ? data.glucose : data.weight,
-                    chartHeight,
-                    minVal,
-                    maxVal
-                  )}
-                  fill="none"
-                  stroke={currentChart.colors.primary}
-                  strokeWidth="2"
-                />
+                ) : null
               )}
             </Svg>
           </View>
@@ -487,7 +971,10 @@ export default function SummaryScreen({ navigation, route }) {
         {xAxisData && xAxisData.length > 0 ? (
           renderXAxis(xAxisData, isMeanChart)
         ) : (
-          <Text style={styles.noDataText}>No data available</Text>
+          <View style={styles.noDataContainer}>
+            <Text style={styles.noDataText}>No data available for selected period</Text>
+            <Text style={styles.noDataSubtext}>Try selecting a different date range or check if measurements exist</Text>
+          </View>
         )}
       </View>
     );
@@ -890,10 +1377,24 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(10), 
     color: TEXT_LIGHT 
   },
+  noDataContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: scaleHeight(20),
+    paddingHorizontal: scaleWidth(16),
+  },
   noDataText: { 
     textAlign: 'center', 
     marginTop: scaleHeight(8), 
-    color: TEXT_LIGHT 
+    color: TEXT_LIGHT,
+    fontSize: scaleFont(14),
+    fontWeight: '600'
+  },
+  noDataSubtext: {
+    textAlign: 'center',
+    marginTop: scaleHeight(4),
+    color: TEXT_LIGHT,
+    fontSize: scaleFont(12),
   },
 
   modalOverlay: { 
