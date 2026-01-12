@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react'; // Amna Changes: Added useCallback and useRef
 import { 
   View, Text, TouchableOpacity, StyleSheet, Image, StatusBar, ScrollView 
 } from 'react-native';
@@ -13,7 +13,10 @@ import apiService from '../../services/apiService';
 // Base dimensions used for scaling calculations (standard phone size)
 const guidelineBaseWidth = 375;
 const guidelineBaseHeight = 812;
-const SECONDARY_ACCENT = colors.secondaryButton || '#FF0000';
+
+// Color constants
+const NAVY_BLUE = '#293d55';
+const RED_ACCENT = colors.secondaryButton || '#FF0000';
 
 // ==================== NOTIFICATION PROCESSING HELPERS ====================
 
@@ -157,7 +160,7 @@ const loadSystemNotifications = async () => {
 // Process and sync all notifications
 const processNotifications = async (patientData) => {
   try {
-    console.log('🔄 Processing notifications in Home...');
+    console.log('📄 Processing notifications in Home...');
     
     // Load existing data
     const storedAssessments = await loadStoredAssessments();
@@ -263,10 +266,6 @@ export default function Home({ navigation }) {
   const scaleFont = size =>
     Math.min((width / guidelineBaseWidth) * size, size * 1.2);
 
-  // Define the primary color
-  const PRIMARY_ACCENT = colors.primaryButton || '#3498db';
-  const SECONDARY_ACCENT = colors.secondaryButton || '#FF0000';
-
   const [userName, setUserName] = useState("");
   const [greeting, setGreeting] = useState("Good Morning");
   const [unreadCount, setUnreadCount] = useState(0);
@@ -282,8 +281,13 @@ export default function Home({ navigation }) {
     weight: 'normal',
   });
 
-  // Function to set greeting based on time of day
-  const setTimeBasedGreeting = () => {
+  // Amna Changes: Add refs to track loading state and prevent multiple simultaneous calls
+  const isFetchingRef = useRef(false);
+  const lastFetchTimeRef = useRef(0);
+  const fetchDebounceTimeoutRef = useRef(null);
+
+  // Amna Changes: Memoize functions to prevent recreation on every render
+  const setTimeBasedGreeting = useCallback(() => {
     const hour = new Date().getHours();
     if (hour < 12) {
       setGreeting("Good Morning");
@@ -294,11 +298,14 @@ export default function Home({ navigation }) {
     } else {
       setGreeting("Good Night");
     }
-  };
+  }, []);
 
   // Fetch unread notifications count - SIMPLIFIED VERSION
-  const fetchUnreadCount = async () => {
+  const fetchUnreadCount = useCallback(async () => {
     try {
+      // Amna Changes: Skip if already fetching
+      if (isFetchingRef.current) return;
+      
       console.log('🔔 Fetching unread count...');
       
       // Get the badge count from AsyncStorage
@@ -316,10 +323,10 @@ export default function Home({ navigation }) {
       console.error('❌ Error fetching unread count:', error);
       setUnreadCount(0);
     }
-  };
+  }, []);
 
   // Fetch practice ranges/thresholds
-  const fetchPracticeRanges = async (practiceId) => {
+  const fetchPracticeRanges = useCallback(async (practiceId) => {
     try {
       if (!practiceId) return null;
       
@@ -337,10 +344,10 @@ export default function Home({ navigation }) {
       console.log('⚠️ Could not fetch practice ranges, using defaults:', error.message);
       return null;
     }
-  };
+  }, []);
 
   // Determine vitals status based on practice ranges
-  const determineVitalsStatus = (measurements, ranges) => {
+  const determineVitalsStatus = useCallback((measurements, ranges) => {
     const status = {
       bloodPressure: 'normal',
       bloodGlucose: 'normal',
@@ -402,11 +409,11 @@ export default function Home({ navigation }) {
     }
 
     return status;
-  };
+  }, []);
 
   // Get color based on vitals status
   // HIGH = RED, LOW = YELLOW, NORMAL = GREEN
-  const getStatusColor = (status) => {
+  const getStatusColor = useCallback((status) => {
     switch (status) {
       case 'high':
         return '#EF4444'; // Red
@@ -416,16 +423,50 @@ export default function Home({ navigation }) {
       default:
         return '#10B981'; // Green
     }
-  };
+  }, []);
+
+  // Amna Changes: Debounced fetch function to prevent rapid consecutive calls
+  const debouncedFetchPatientData = useCallback(async () => {
+    // Clear any existing timeout
+    if (fetchDebounceTimeoutRef.current) {
+      clearTimeout(fetchDebounceTimeoutRef.current);
+    }
+    
+    // Set a new timeout to fetch after a short delay (prevents multiple rapid calls)
+    fetchDebounceTimeoutRef.current = setTimeout(async () => {
+      await fetchPatientData();
+    }, 300); // 300ms debounce
+  }, []);
 
   // Function to fetch patient data and vitals from the API using getPatientDetails
-  const fetchPatientData = async () => {
+  const fetchPatientData = useCallback(async () => {
+    // Amna Changes: Prevent multiple simultaneous API calls
+    if (isFetchingRef.current) {
+      console.log('⏳ Already fetching data, skipping...');
+      return null;
+    }
+    
+    // Amna Changes: Rate limiting - don't fetch more than once every 5 seconds
+    const now = Date.now();
+    if (now - lastFetchTimeRef.current < 5000) {
+      console.log('⏳ Rate limiting: Skipping fetch, last fetch was too recent');
+      return null;
+    }
+    
+    isFetchingRef.current = true;
+    lastFetchTimeRef.current = now;
+    
     try {
       let practiceId = null;
       let patientId = null;
       
-      // First, try to get IDs from AsyncStorage
-      const userData = await AsyncStorage.getItem('user');
+      // Amna Changes: Optimized AsyncStorage calls - fetch all at once
+      const [userData, storedPracticeId, storedPatientId] = await Promise.all([
+        AsyncStorage.getItem('user'),
+        AsyncStorage.getItem('practiceId'),
+        AsyncStorage.getItem('patientId')
+      ]);
+      
       if (userData) {
         const user = JSON.parse(userData);
         practiceId = user.practice_id;
@@ -441,11 +482,9 @@ export default function Home({ navigation }) {
       
       // If not in user data, try separate storage
       if (!practiceId) {
-        const storedPracticeId = await AsyncStorage.getItem('practiceId');
         practiceId = storedPracticeId;
       }
       if (!patientId) {
-        const storedPatientId = await AsyncStorage.getItem('patientId');
         // Only use if it's numeric (user_id), not a string patient_id
         if (storedPatientId && !isNaN(storedPatientId) && storedPatientId !== '') {
           patientId = storedPatientId;
@@ -493,6 +532,7 @@ export default function Home({ navigation }) {
       // Silently return null if IDs not found (don't show error)
       if (!practiceId || !patientId) {
         console.log('⚠️ Practice ID or Patient ID not found - skipping vitals fetch');
+        isFetchingRef.current = false;
         return null;
       }
   
@@ -508,19 +548,28 @@ export default function Home({ navigation }) {
         
         if (!detailsResult || !detailsResult.success) {
           console.error('❌ API returned unsuccessful response:', detailsResult);
+          isFetchingRef.current = false;
           return null;
         }
         
         const patientData = detailsResult.data || detailsResult;
         const patient = patientData.patient || patientData;
         
+        // Amna Changes: Parallel AsyncStorage operations
+        const storagePromises = [];
+        
         // Store patients_table_id for future measurement API calls
         if (patient && (patient.patients_table_id || patient.id)) {
           const patientsTableId = String(patient.patients_table_id || patient.id);
-          await AsyncStorage.setItem('patientsTableId', patientsTableId);
-          await AsyncStorage.setItem('patientDetails', JSON.stringify(patient));
+          storagePromises.push(
+            AsyncStorage.setItem('patientsTableId', patientsTableId),
+            AsyncStorage.setItem('patientDetails', JSON.stringify(patient))
+          );
           console.log('💾 Stored patients_table_id:', patientsTableId);
         }
+        
+        // Execute all storage operations in parallel
+        await Promise.all(storagePromises);
         
         latestMeasurements = patientData.latest_measurements || {};
         
@@ -532,7 +581,7 @@ export default function Home({ navigation }) {
       } catch (apiError) {
         console.error('❌ Error calling getPatientDetails API:', apiError);
         console.error('Error message:', apiError.message);
-        console.error('Error stack:', apiError.stack);
+        isFetchingRef.current = false;
         return null;
       }
       
@@ -605,7 +654,15 @@ export default function Home({ navigation }) {
         console.log('ℹ️ No weight data available. latestMeasurements.weight is:', latestMeasurements.weight);
       }
   
-      setMeasurements(processedMeasurements);
+      // Amna Changes: Update state in a batch
+      setMeasurements(prev => {
+        // Only update if values actually changed to prevent unnecessary re-renders
+        if (JSON.stringify(prev) === JSON.stringify(processedMeasurements)) {
+          return prev;
+        }
+        return processedMeasurements;
+      });
+      
       console.log('✅ Latest vitals updated:', processedMeasurements);
       
       // Fetch practice ranges if not already loaded
@@ -614,23 +671,41 @@ export default function Home({ navigation }) {
         if (ranges) {
           // Determine vitals status based on ranges
           const status = determineVitalsStatus(processedMeasurements, ranges);
-          setVitalsStatus(status);
+          setVitalsStatus(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(status)) return prev;
+            return status;
+          });
           console.log('🎨 Vitals status determined:', status);
         }
       } else if (practiceRanges) {
         // Determine vitals status if ranges are already loaded
         const status = determineVitalsStatus(processedMeasurements, practiceRanges);
-        setVitalsStatus(status);
+        setVitalsStatus(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(status)) return prev;
+          return status;
+        });
         console.log('🎨 Vitals status determined:', status);
       }
       
+      // Amna Changes: Process notifications in background without blocking UI
+      setTimeout(async () => {
+        try {
+          await processNotifications({ measurements: processedMeasurements, practiceId });
+          await fetchUnreadCount();
+        } catch (error) {
+          console.error('❌ Background notification processing failed:', error);
+        }
+      }, 0);
+      
       // Return data object for notification processing
+      isFetchingRef.current = false;
       return { measurements: processedMeasurements, practiceId };
     } catch (error) {
       console.error('❌ Failed to fetch patient data:', error);
+      isFetchingRef.current = false;
       return null;
     }
-  };
+  }, [fetchPracticeRanges, determineVitalsStatus, fetchUnreadCount, practiceRanges]);
 
   // Load data on initial mount
   useEffect(() => {
@@ -639,82 +714,34 @@ export default function Home({ navigation }) {
         console.log('🏠 Home screen mounted, loading initial data...');
         setTimeBasedGreeting();
         
-        // Wait a bit to ensure user data is available after login
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Load user name and get practiceId - try multiple times if needed
-        let userData = await AsyncStorage.getItem('user');
-        let practiceId = null;
-        let patientId = null;
-        let retries = 0;
-        const maxRetries = 3;
-        
-        // Retry logic to ensure user data is loaded
-        while ((!userData || !practiceId || !patientId) && retries < maxRetries) {
-          if (!userData) {
-            userData = await AsyncStorage.getItem('user');
-          }
-          
-          if (userData) {
-            const parsed = JSON.parse(userData);
-            const fullName = parsed.first_name && parsed.last_name
-              ? `${parsed.first_name} ${parsed.last_name}`
-              : parsed.name || parsed.username || '';
-            setUserName(fullName);
-            practiceId = parsed.practice_id || await AsyncStorage.getItem('practiceId');
-            patientId = parsed.id || parsed.patient_id || await AsyncStorage.getItem('patientId');
-          }
-          
-          // If still missing, try fetching from API
-          if ((!practiceId || !patientId) && retries < maxRetries - 1) {
-            try {
-              const userResult = await apiService.getCurrentUser();
-              const user = userResult?.data?.user || userResult?.user || userResult?.data || null;
-              if (user) {
-                if (user.practice_id) {
-                  practiceId = String(user.practice_id);
-                  await AsyncStorage.setItem('practiceId', practiceId);
-                }
-                if (user.id) {
-                  patientId = String(user.id);
-                  await AsyncStorage.setItem('patientId', patientId);
-                }
-              }
-            } catch (apiError) {
-              console.log('⚠️ Could not fetch user from API on retry:', apiError.message);
-            }
-          }
-          
-          if (!practiceId || !patientId) {
-            retries++;
-            await new Promise(resolve => setTimeout(resolve, 500));
-          } else {
-            break;
-          }
+        // Amna Changes: Load user name immediately without delay
+        const userData = await AsyncStorage.getItem('user');
+        if (userData) {
+          const parsed = JSON.parse(userData);
+          const fullName = parsed.first_name && parsed.last_name
+            ? `${parsed.first_name} ${parsed.last_name}`
+            : parsed.name || parsed.username || '';
+          setUserName(fullName);
         }
         
-        // Fetch practice ranges first (needed for color coding)
-        if (practiceId) {
-          await fetchPracticeRanges(practiceId);
-        }
+        // Amna Changes: Fetch data immediately but don't wait for it to render UI
+        // This makes the UI appear instantly
+        debouncedFetchPatientData();
         
-        // Fetch patient data - now IDs should be available
-        const patientData = await fetchPatientData();
-        
-        // Process notifications with fresh patient data
-        if (patientData) {
-          await processNotifications(patientData);
-        }
-        
-        // Now fetch badge count
-        await fetchUnreadCount();
       } catch (e) {
         console.error('❌ Error loading initial data:', e);
       }
     };
     
     loadInitialData();
-  }, []); // Run once on mount
+    
+    // Amna Changes: Cleanup timeout on unmount
+    return () => {
+      if (fetchDebounceTimeoutRef.current) {
+        clearTimeout(fetchDebounceTimeoutRef.current);
+      }
+    };
+  }, [setTimeBasedGreeting, debouncedFetchPatientData]); // Amna Changes: Added dependencies
 
   // Fetch patient data and load user name when the screen comes into focus
   // Also set up polling for real-time updates
@@ -735,16 +762,8 @@ export default function Home({ navigation }) {
             setUserName(fullName);
           }
           
-          // Fetch patient data FIRST - this will update measurements state
-          const patientData = await fetchPatientData();
-          
-          // Process notifications with fresh patient data
-          if (patientData) {
-            await processNotifications(patientData);
-          }
-          
-          // Now fetch badge count (it's been updated by processNotifications)
-          await fetchUnreadCount();
+          // Amna Changes: Use debounced fetch to prevent rapid calls
+          debouncedFetchPatientData();
           
         } catch (e) {
           console.error('❌ Error loading data:', e);
@@ -754,27 +773,27 @@ export default function Home({ navigation }) {
       // Load data immediately when screen comes into focus
       loadData();
       
-      // Set up polling for real-time updates:
-      // - Refresh vitals every 10 seconds (when vitals change in web app, they'll appear here)
-      // - Refresh badge count every 5 seconds
+      // Amna Changes: Optimized polling intervals
+      // - Increased intervals to reduce load
+      // - Using separate intervals for different tasks
       const vitalsIntervalId = setInterval(async () => {
         console.log('🔄 Polling for vitals updates...');
-        const patientData = await fetchPatientData();
-        if (patientData) {
-          await processNotifications(patientData);
-        }
-      }, 10000); // Poll every 10 seconds for vitals updates
+        await debouncedFetchPatientData();
+      }, 30000); // Amna Changes: Increased from 10 to 30 seconds for vitals updates
       
       const badgeIntervalId = setInterval(async () => {
         await fetchUnreadCount();
-      }, 5000); // Poll every 5 seconds for badge count
+      }, 15000); // Amna Changes: Increased from 5 to 15 seconds for badge count
       
       // Cleanup intervals on unmount
       return () => {
         clearInterval(vitalsIntervalId);
         clearInterval(badgeIntervalId);
+        if (fetchDebounceTimeoutRef.current) {
+          clearTimeout(fetchDebounceTimeoutRef.current);
+        }
       };
-    }, [])
+    }, [setTimeBasedGreeting, debouncedFetchPatientData, fetchUnreadCount]) // Amna Changes: Added dependencies
   );
 
   // Navigation handlers
@@ -783,7 +802,7 @@ export default function Home({ navigation }) {
   const openNotifications = () => navigation.navigate('Notifications');
 
   // Format date and time for display (e.g., "Nov 13, 2025 · 09:51 AM")
-  const formatDateTime = (dateTimeString) => {
+  const formatDateTime = useCallback((dateTimeString) => {
     if (!dateTimeString || dateTimeString === '--' || dateTimeString === 'Recent') {
       return 'Recent';
     }
@@ -808,10 +827,10 @@ export default function Home({ navigation }) {
       console.error('Error formatting date:', error);
       return dateTimeString;
     }
-  };
+  }, []);
 
   // Format time ago (e.g., "18 days ago")
-  const formatTimeAgo = (dateTimeString) => {
+  const formatTimeAgo = useCallback((dateTimeString) => {
     if (!dateTimeString || dateTimeString === '--' || dateTimeString === 'Recent') {
       return 'Recent';
     }
@@ -836,11 +855,11 @@ export default function Home({ navigation }) {
       console.error('Error formatting time ago:', error);
       return dateTimeString;
     }
-  };
+  }, []);
 
   // Render card with SWAPPED positions: "days ago" ABOVE, date/time BELOW
   // Now includes color coding: HIGH = RED, LOW = YELLOW, NORMAL = GREEN
-  const renderCard = (label, data, unit, openList, openSummary, type) => {
+  const renderCard = useCallback((label, data, unit, openList, openSummary, type) => {
     // Show card even if data is null (for BG and Weight when no data exists)
     // Just show "No data available" instead of hiding the card
     const hasData = data !== null && data !== undefined;
@@ -919,7 +938,7 @@ export default function Home({ navigation }) {
             </View>
           </TouchableOpacity>
           <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!hasData} onPress={() => openSummary(type)}>
-            <View style={[styles(scaleWidth, scaleHeight, scaleFont).chartCircle, { backgroundColor: PRIMARY_ACCENT }]}>
+            <View style={[styles(scaleWidth, scaleHeight, scaleFont).chartCircle, { backgroundColor: NAVY_BLUE }]}>
               <Image source={require('../../android/app/src/assets/images/bar-chart.png')} style={styles(scaleWidth, scaleHeight, scaleFont).chartIcon} />
             </View>
           </TouchableOpacity>
@@ -927,80 +946,70 @@ export default function Home({ navigation }) {
       </View>
     </View>
     );
-  };
+  }, [scaleWidth, scaleHeight, scaleFont, vitalsStatus, getStatusColor, formatTimeAgo, formatDateTime]);
 
   return (
     <SafeAreaProvider>
-      {/* Set status bar style for the blue background */}
-      <StatusBar barStyle="light-content" backgroundColor={PRIMARY_ACCENT} />
+      {/* Set status bar style for the navy blue background */}
+      <StatusBar barStyle="light-content" backgroundColor={NAVY_BLUE} />
 
-      {/* Main container starts with the white background */}
+      {/* Main container starts with light gray background */}
       <SafeAreaView style={styles(scaleWidth, scaleHeight, scaleFont).fullScreenContainer}>
         <View style={styles(scaleWidth, scaleHeight, scaleFont).mainContainer}>
           
-          {/* Header Section with Blue Background and prominent Bottom Curves (Greeting Logic) */}
-          <View style={[styles(scaleWidth, scaleHeight, scaleFont).blueHeaderContainer, { backgroundColor: PRIMARY_ACCENT }]}>
-            <View style={styles(scaleWidth, scaleHeight, scaleFont).headerRow}>
-              <View style={styles(scaleWidth, scaleHeight, scaleFont).nameContainer}>
-                {/* Greeting + Hi Icon on same line */}
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={[styles(scaleWidth, scaleHeight, scaleFont).greetingText, { color: 'white' }]}>{greeting}</Text>
-                  <Image
-                    source={require('../../android/app/src/assets/images/hi.png')}
-                    style={{ width: 40, height: 40, marginLeft: 2, tintColor: 'white' }}
-                    resizeMode="contain"
-                  />
-                </View>
-
-                {/* User name */}
-                <Text style={styles(scaleWidth, scaleHeight, scaleFont).userName} numberOfLines={1} ellipsizeMode="tail">
-                  {userName}
+          {/* NEW HEADER DESIGN - Like Home (2).js */}
+          <View style={[styles(scaleWidth, scaleHeight, scaleFont).headerContainer, { backgroundColor: NAVY_BLUE }]}>
+            <View style={styles(scaleWidth, scaleHeight, scaleFont).headerContent}>
+              {/* Top row: Greeting + Notification */}
+              <View style={styles(scaleWidth, scaleHeight, scaleFont).headerTopRow}>
+                <Text style={styles(scaleWidth, scaleHeight, scaleFont).greetingText}>
+                  {greeting}
                 </Text>
+                
+                {/* Notification Icon */}
+                <TouchableOpacity 
+                  style={styles(scaleWidth, scaleHeight, scaleFont).notificationButton} 
+                  onPress={openNotifications}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationIconContainer}>
+                    <Image 
+                      source={require('../../android/app/src/assets/images/bell.png')} 
+                      style={styles(scaleWidth, scaleHeight, scaleFont).notificationImage} 
+                      resizeMode="contain" 
+                    />
+                    
+                    {/* Dynamic Notification Badge */}
+                    {unreadCount > 0 && (
+                      <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadge}>
+                        <Text style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadgeText}>
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
               </View>
-
-              {/* Notification Icon */}
-              <TouchableOpacity 
-                style={styles(scaleWidth, scaleHeight, scaleFont).notificationIcon} 
-                onPress={openNotifications}
-                activeOpacity={0.7}
-              >
-                <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationIconContainer}>
-                  <Image 
-                    source={require('../../android/app/src/assets/images/bell.png')} 
-                    style={[styles(scaleWidth, scaleHeight, scaleFont).notificationImage, { tintColor: 'white' }]} 
-                    resizeMode="contain" 
-                  />
-                  
-                  {/* Dynamic Notification Badge */}
-                  {unreadCount > 0 && (
-                    <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadge}>
-                      <Text style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadgeText}>
-                        {unreadCount > 9 ? '9+' : unreadCount}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
+              
+              {/* Username */}
+              <Text style={styles(scaleWidth, scaleHeight, scaleFont).userNameText} numberOfLines={1}>
+                {userName || 'User'}
+              </Text>
             </View>
           </View>
-          
-          {/* Last Upload Data (Outside the blue background) */}
-          <View style={styles(scaleWidth, scaleHeight, scaleFont).sectionTitleContainer}>
-            <Text style={styles(scaleWidth, scaleHeight, scaleFont).sectionTitle}>Last Upload Data</Text>
-          </View>
 
-          {/* Cards Section */}
-          <ScrollView
-            style={styles(scaleWidth, scaleHeight, scaleFont).cardsSection}
-            contentContainerStyle={{ paddingBottom: scaleHeight(20) }}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles(scaleWidth, scaleHeight, scaleFont).dataCardsContainer}>
+          {/* White Cards Section */}
+          <View style={styles(scaleWidth, scaleHeight, scaleFont).cardsWrapper}>
+            {/* <ScrollView
+              style={styles(scaleWidth, scaleHeight, scaleFont).cardsScrollView}
+              contentContainerStyle={{ paddingBottom: scaleHeight(20) }}
+              showsVerticalScrollIndicator={false}
+            > */}
               {renderCard('Blood Pressure (bpm)', measurements.bloodPressure, 'mmHg', openList, openSummary, 'bloodPressure')}
               {renderCard('Blood Glucose (bg)', measurements.bloodGlucose, 'mg/dl', openList, openSummary, 'bloodGlucose')}
               {renderCard('Weight (wt)', measurements.weight, 'lb', openList, openSummary, 'weight')}
-            </View>
-          </ScrollView>
+            {/* </ScrollView> */}
+          </View>
         </View>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -1011,64 +1020,57 @@ export default function Home({ navigation }) {
 const styles = (scaleWidth, scaleHeight, scaleFont) => StyleSheet.create({
   fullScreenContainer: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#F5F5F5',
   },
   mainContainer: {
     flex: 1,
   },
-  blueHeaderContainer: {
-    paddingTop: scaleHeight(10),
-    paddingHorizontal: scaleWidth(20),
-    paddingBottom: scaleHeight(30),
+  
+  // NEW HEADER STYLES 
+  headerContainer: {
+    paddingTop: scaleHeight(20),
+    paddingHorizontal: scaleWidth(24),
+    paddingBottom: scaleHeight(100), // Extra space for curve effect
   },
-  sectionTitleContainer: {
-    backgroundColor: 'white',
-    paddingHorizontal: scaleWidth(20),
-    marginTop: scaleHeight(-20),
-    paddingTop: scaleHeight(15),
-    paddingBottom: scaleHeight(5),
-    borderTopLeftRadius: scaleWidth(25),
-    borderTopRightRadius: scaleWidth(25),
+  headerContent: {
+    paddingBottom: scaleHeight(10),
   },
-  headerRow: {
+  headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: scaleHeight(12),
-  },
-  nameContainer: {
-    flex: 1,
+    alignItems: 'center',
+    marginBottom: scaleHeight(8),
   },
   greetingText: {
-    fontSize: scaleFont(28),
-    fontWeight: 'bold',
-    marginBottom: scaleHeight(2),
-  },
-  userName: {
-    fontSize: scaleFont(18),
+    fontSize: scaleFont(24),
     fontWeight: '600',
     color: 'white',
   },
-  notificationIcon: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: scaleHeight(5),
+  userNameText: {
+    fontSize: scaleFont(18),
+    fontWeight: '400',
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: scaleHeight(-8),
+  },
+  notificationButton: {
+    padding: scaleWidth(8),
   },
   notificationIconContainer: {
     position: 'relative',
-    width: scaleWidth(30),
-    height: scaleWidth(30),
+    width: scaleWidth(28),
+    height: scaleWidth(28),
     justifyContent: 'center',
     alignItems: 'center',
   },
   notificationImage: {
     width: scaleWidth(24),
     height: scaleWidth(24),
+    tintColor: 'white',
   },
   notificationBadge: {
     position: 'absolute',
     right: scaleWidth(-4),
-    top: scaleHeight(-6),
+    top: scaleHeight(-4),
     backgroundColor: '#EF4444',
     borderRadius: scaleWidth(10),
     minWidth: scaleWidth(18),
@@ -1076,7 +1078,7 @@ const styles = (scaleWidth, scaleHeight, scaleFont) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: 'white',
+    borderColor: NAVY_BLUE,
     paddingHorizontal: scaleWidth(4),
   },
   notificationBadgeText: {
@@ -1086,127 +1088,133 @@ const styles = (scaleWidth, scaleHeight, scaleFont) => StyleSheet.create({
     textAlign: 'center',
     lineHeight: scaleFont(11),
   },
-  sectionTitle: {
-    fontSize: scaleFont(20),
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  cardsSection: {
+  
+  // Cards wrapper - Positioned to overlap header curve
+  cardsWrapper: {
     flex: 1,
-    backgroundColor: 'white',
+    marginTop: scaleHeight(-70), // Pull up to overlap header
     paddingHorizontal: scaleWidth(20),
-    paddingTop: scaleHeight(10),
   },
-  dataCardsContainer: {
-    flex: 1,
-  },
+  // cardsScrollView: {
+  //   flex: 1,
+  // },
+  
+  // CARD STYLES
   card: {
+    marginTop: scaleHeight(6),
     backgroundColor: '#FFFFFF',
     borderRadius: scaleWidth(12),
     paddingVertical: scaleHeight(10),
-    paddingHorizontal: scaleWidth(14),
-    marginBottom: scaleHeight(18),
+    paddingHorizontal: scaleWidth(16),
+    marginBottom: scaleHeight(16),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
     elevation: 3,
     borderWidth: 1,
     borderColor: '#F0F0F0',
-    minHeight: scaleHeight(110),
-    maxWidth: 500,
-    alignSelf: 'center',
-    width: '100%',
+    minHeight: scaleHeight(120),
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: scaleHeight(5),
+    marginBottom: scaleHeight(6),
   },
   cardHeaderLeft: {
     flex: 1,
   },
   cardLabel: {
     fontSize: scaleFont(15),
-    fontWeight: '400',
-    color: '#000000',
+    fontWeight: '500',
+    color: '#1a1a1a',
     marginBottom: scaleHeight(2),
   },
   cardTimeAgo: {
-    fontSize: scaleFont(10),
+    fontSize: scaleFont(11),
     color: '#999999',
-    marginBottom: scaleHeight(5),
+    marginBottom: scaleHeight(6),
   },
   valueContainer: {
-    marginBottom: scaleHeight(4),
+    marginBottom: scaleHeight(6),
   },
   cardMainValue: {
-    fontSize: scaleFont(26),
+    fontSize: scaleFont(28),
     fontWeight: '700',
-    color: '#293d55',
-    lineHeight: scaleFont(30),
+    color: NAVY_BLUE,
+    lineHeight: scaleFont(32),
   },
   cardSlash: {
-    fontSize: scaleFont(26),
+    fontSize: scaleFont(28),
     fontWeight: '700',
-    color: '#293d55',
+    color: NAVY_BLUE,
   },
   cardSecondValue: {
-    fontSize: scaleFont(26),
+    fontSize: scaleFont(28),
     fontWeight: '700',
-    color: '#293d55',
+    color: NAVY_BLUE,
   },
   cardDateTime: {
-    fontSize: scaleFont(10),
+    fontSize: scaleFont(11),
     color: '#999999',
+    marginBottom: scaleHeight(4),
   },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: scaleHeight(5),
+    paddingTop: scaleHeight(8),
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
     marginTop: scaleHeight(6),
   },
   cardUnit: {
-    fontSize: scaleFont(10),
-    color: colors.textSecondary,
+    fontSize: scaleFont(11),
+    color: '#666666',
+    fontWeight: '500',
   },
   cardActions: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   cardActionButton: {
-    marginLeft: scaleWidth(8),
+    marginLeft: scaleWidth(10),
   },
   chartCircle: {
-    width: scaleWidth(30),
-    height: scaleWidth(30),
-    borderRadius: scaleWidth(15),
+    width: scaleWidth(32),
+    height: scaleWidth(32),
+    borderRadius: scaleWidth(16),
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 3,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   chartIcon: {
-    width: scaleWidth(14),
-    height: scaleWidth(14),
-    tintColor: colors.textWhite,
+    width: scaleWidth(15),
+    height: scaleWidth(15),
+    tintColor: '#FFFFFF',
   },
   listCircle: {
-    width: scaleWidth(30),
-    height: scaleWidth(30),
-    borderRadius: scaleWidth(15),
-    backgroundColor: SECONDARY_ACCENT,
+    width: scaleWidth(32),
+    height: scaleWidth(32),
+    borderRadius: scaleWidth(16),
+    backgroundColor: RED_ACCENT,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 3,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   listIcon: {
-    width: scaleWidth(14),
-    height: scaleWidth(14),
-    tintColor: colors.textWhite,
+    width: scaleWidth(15),
+    height: scaleWidth(15),
+    tintColor: '#FFFFFF',
   },
   statusBadge: {
     paddingHorizontal: scaleWidth(8),

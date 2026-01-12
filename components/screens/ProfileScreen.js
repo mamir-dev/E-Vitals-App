@@ -10,6 +10,7 @@ import {
   Dimensions,
   StatusBar,
   Alert,
+  Platform
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../../config/globall';
@@ -524,11 +525,11 @@ const PatientProfileScreen = ({ navigation }) => {
     // Ensure value is always a string
     const displayValue = safeString(value, 'Not provided');
     return (
-    <View style={styles.infoFieldContainer}>
-      <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.readOnlyText}>{displayValue}</Text>
-    </View>
-  );
+      <View style={styles.infoFieldRow}>
+        <Text style={styles.infoLabel}>{label}:</Text>
+        <Text style={styles.infoValue}>{displayValue}</Text>
+      </View>
+    );
   };
 
   if (isLoading) {
@@ -548,7 +549,6 @@ const PatientProfileScreen = ({ navigation }) => {
     <SafeAreaProvider>
       <SafeAreaView style={styles.fullScreenContainer}>
         {/* Status Bar */}
-        {/* <StatusBar backgroundColor={NAVY_BLUE} barStyle="light-content" /> */}
         <StatusBar barStyle="default" />
 
         
@@ -573,61 +573,60 @@ const PatientProfileScreen = ({ navigation }) => {
               
               {/* Profile Section - Image and Name */}
               <View style={styles.profileSection}>
-                <View style={styles.profileImageContainer}>
-                  <Image
-                    source={require('../../android/app/src/assets/images/profile1.png')}
-                    style={[
-                      styles.profileImage,
-                      { borderColor: NAVY_BLUE, borderWidth: scaleWidth(3) } 
-                    ]}
-                    resizeMode="cover"
-                  />
+                {/* Optional: Add profile image here if needed */}
+              </View>
+
+              {/* Patient Details Section - Now in a box */}
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Patient Details</Text>
                 </View>
                 
-                {/* User Name displayed prominently below image */}
-                <Text style={styles.userNameDisplay}>{safeString(userData.name, 'Not provided')}</Text>
+                <View style={styles.infoBox}>
+                  <InfoField label="Name" value={userData.name} />
+                  <View style={styles.dividerLine} />
+                  <InfoField label="Date of Birth" value={userData.dob} />
+                  <View style={styles.dividerLine} />
+                  <InfoField label="Address" value={userData.address} />
+                  <View style={styles.dividerLine} />
+                  <InfoField label="Email" value={userData.email} />
+                  <View style={styles.dividerLine} />
+                  <InfoField label="Phone" value={userData.phone} />
+                </View>
               </View>
 
-              {/* Patient Details Section */}
-              <View style={styles.patientDetailsSection}>
-                <Text style={styles.sectionTitle}>Patient Details</Text>
+              {/* Medical Team Section - Already in a box */}
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Medical Team</Text>
+                </View>
                 
-                <InfoField label="Name" value={userData.name} />
-                <InfoField label="Date of Birth" value={userData.dob} />
-                <InfoField label="Address" value={userData.address} />
-                <InfoField label="Email" value={userData.email} />
-                <InfoField label="Phone" value={userData.phone} />
-              </View>
-
-              {/* Divider Line */}
-              <View style={styles.divider} />
-
-              {/* Medical Team Section */}
-              <View style={styles.medicalTeamSection}>
-                <Text style={styles.sectionTitle}>Medical Team</Text>
-                
-                <View style={styles.medicalTeamContainer}>
+                <View style={styles.infoBox}>
                   <View style={styles.medicalTeamRow}>
-                    <Text style={styles.medicalTeamLabel}>Practice:</Text>
-                    <View style={styles.medicalTeamValueContainer}>
-                      <Text style={styles.medicalTeamValue}>{safeString(medicalTeam.practice, 'Not assigned')}</Text>
+                    <Text style={styles.infoLabel}>Practice:</Text>
+                    <View style={styles.infoValueContainer}>
+                      <Text style={styles.infoValue}>{safeString(medicalTeam.practice, 'Not assigned')}</Text>
                       {medicalTeam.practice_id && (
-                        <Text style={styles.medicalTeamId}>(ID: {medicalTeam.practice_id})</Text>
+                        <Text style={styles.infoId}>(ID: {medicalTeam.practice_id})</Text>
                       )}
                     </View>
                   </View>
+                  <View style={styles.dividerLine} />
+                  
                   <View style={styles.medicalTeamRow}>
-                    <Text style={styles.medicalTeamLabel}>Provider:</Text>
-                    <View style={styles.medicalTeamValueContainer}>
-                      <Text style={styles.medicalTeamValue}>{safeString(medicalTeam.provider, 'Not assigned')}</Text>
+                    <Text style={styles.infoLabel}>Provider:</Text>
+                    <View style={styles.infoValueContainer}>
+                      <Text style={styles.infoValue}>{safeString(medicalTeam.provider, 'Not assigned')}</Text>
                       {medicalTeam.provider_id && (
-                        <Text style={styles.medicalTeamId}>(ID: {medicalTeam.provider_id})</Text>
+                        <Text style={styles.infoId}>(ID: {medicalTeam.provider_id})</Text>
                       )}
                     </View>
                   </View>
+                  <View style={styles.dividerLine} />
+                  
                   <View style={styles.medicalTeamRow}>
-                    <Text style={styles.medicalTeamLabel}>Caregiver:</Text>
-                    <Text style={styles.medicalTeamValue}>{safeString(medicalTeam.caregiver, 'N/A (No caregiver assigned)')}</Text>
+                    <Text style={styles.infoLabel}>Caregiver:</Text>
+                    <Text style={styles.infoValue}>{safeString(medicalTeam.caregiver, 'N/A (No caregiver assigned)')}</Text>
                   </View>
                 </View>
               </View>
@@ -680,11 +679,11 @@ const styles = StyleSheet.create({
     paddingTop: scaleHeight(10),
   },
   backButton: {
-  padding: 10, 
-  justifyContent: 'center',
-  alignItems: 'left',
-  minHeight: 55, // Removed scaleHeight
-  minWidth: 55, // Removed scaleWidth
+    padding: 10, 
+    justifyContent: 'center',
+    alignItems: 'left',
+    minHeight: 55,
+    minWidth: 55,
   },
   backButtonText: {
     fontSize: scaleFont(35),
@@ -692,19 +691,19 @@ const styles = StyleSheet.create({
     fontWeight: '300',
   },
   headerTitle: {
-  fontSize: scaleFont(22),
-  fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
-  color: WHITE,
-  textAlign: 'center',
-  flex: 1,
-  marginLeft: scaleWidth(5),
-  ...Platform.select({
-    android: {
-      includeFontPadding: false,
-      fontFamily: 'sans-serif-condensed', // Android system font
-    },
-  }),
-},
+    fontSize: scaleFont(22),
+    fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
+    color: WHITE,
+    textAlign: 'center',
+    flex: 1,
+    marginLeft: scaleWidth(5),
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+        fontFamily: 'sans-serif-condensed',
+      },
+    }),
+  },
   headerSpacer: {
     width: scaleWidth(36),
   },
@@ -717,7 +716,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: scaleWidth(35),
     marginTop: scaleWidth(-15),
     paddingTop: scaleWidth(20),
-    // transform: [{ translateY: -scaleHeight(10) }], // 🔼 move up slightly
   },
   scrollContent: {
     paddingBottom: scaleHeight(40),
@@ -730,86 +728,26 @@ const styles = StyleSheet.create({
     marginBottom: scaleHeight(20),
     width: '100%',
   },
-  profileImageContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: scaleHeight(10),
-  },
-  profileImage: {
-    width: scaleWidth(100),
-    height: scaleWidth(100),
-    borderRadius: scaleWidth(50),
-  },
-  userNameDisplay: {
-    fontSize: scaleFont(24),
-    fontWeight: '700',
-    color: NAVY_BLUE,
-    marginTop: scaleHeight(5),
-    textAlign: 'center',
-  },
 
-  // Section Title (Common for all sections)
-  sectionTitle: {
-    fontSize: scaleFont(18),
-    fontWeight: '700',
-    color: NAVY_BLUE,
-    marginBottom: scaleHeight(15),
+  // Section Container (for both Patient Details and Medical Team)
+  sectionContainer: {
+    width: '100%',
+    marginBottom: scaleHeight(25),
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: scaleHeight(15),
-  },
-
-  // Patient Details Section
-  patientDetailsSection: {
-    width: '100%',
     marginBottom: scaleHeight(10),
   },
-
-  // Info Fields
-  infoFieldContainer: {
-    width: '100%',
-    backgroundColor: WHITE,
-    borderRadius: scaleWidth(8),
-    paddingHorizontal: scaleWidth(16),
-    paddingVertical: scaleHeight(12),
-    marginBottom: scaleHeight(8),
-    borderLeftWidth: scaleWidth(3),
-    borderLeftColor: NAVY_BLUE,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  infoLabel: {
-    fontSize: scaleFont(14),
-    color: colors.textSecondary,
-    marginBottom: scaleHeight(2),
-    fontWeight: '500',
-  },
-  readOnlyText: {
-    fontSize: scaleFont(16),
-    fontWeight: '600',
+  sectionTitle: {
+    fontSize: scaleFont(18),
+    fontWeight: '700',
     color: NAVY_BLUE,
   },
 
-  // Divider
-  divider: {
-    height: 1,
-    backgroundColor: LIGHT_GREY,
-    marginVertical: scaleHeight(20),
-    width: '100%',
-  },
-
-  // Medical Team Section
-  medicalTeamSection: {
-    width: '100%',
-    marginBottom: scaleHeight(10),
-  },
-  medicalTeamContainer: {
+  // Info Box (Common for both sections)
+  infoBox: {
     width: '100%',
     backgroundColor: WHITE,
     borderRadius: scaleWidth(10),
@@ -819,36 +757,54 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: LIGHT_GREY,
+  },
+
+  // Info Field Rows
+  infoFieldRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: scaleHeight(6),
   },
   medicalTeamRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: scaleHeight(10),
-    paddingVertical: scaleHeight(4),
+    paddingVertical: scaleHeight(6),
   },
-  medicalTeamLabel: {
+  infoLabel: {
     fontSize: scaleFont(14),
-    color: colors.textSecondary,
+    color: colors.textSecondary || '#666',
     fontWeight: '500',
     flex: 1,
   },
-  medicalTeamValueContainer: {
+  infoValueContainer: {
     flex: 2,
     alignItems: 'flex-end',
   },
-  medicalTeamValue: {
+  infoValue: {
     fontSize: scaleFont(16),
     fontWeight: '600',
     color: NAVY_BLUE,
     textAlign: 'right',
+    flex: 2,
   },
-  medicalTeamId: {
+  infoId: {
     fontSize: scaleFont(12),
     fontWeight: '400',
     color: colors.textSecondary || '#666',
     textAlign: 'right',
     marginTop: scaleHeight(2),
+  },
+
+  // Divider Line inside boxes
+  dividerLine: {
+    height: 1,
+    backgroundColor: LIGHT_GREY,
+    marginVertical: scaleHeight(4),
+    width: '100%',
   },
 });
 

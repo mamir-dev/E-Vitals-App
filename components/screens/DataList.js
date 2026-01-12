@@ -21,6 +21,8 @@ import { LineChart } from 'react-native-chart-kit';
 import { colors, fonts } from '../../config/globall';
 import apiService from '../../services/apiService';
 
+import DateTimePicker from '@react-native-community/datetimepicker';
+
 const { width, height } = Dimensions.get('window');
 const guidelineBaseWidth = 375;
 const guidelineBaseHeight = 812;
@@ -31,11 +33,12 @@ const scaleHeight = size => (height / guidelineBaseHeight) * size;
 const scaleFont = size => scaleWidth(size);
 
 /* ──────────────────────  COLORS  ────────────────────── */
-const NAVY_BLUE = colors.primaryButton || '#293d55';
+const NAVY_BLUE = '#293d55'; 
 const WHITE = '#FFFFFF';
 const LIGHT_GREY = '#F4F7F9';
 const BORDER_GREY = '#E0E0E0';
 const TEXT_LIGHT = '#666666';
+
 
 /* ──────────────────────  DROPDOWN OPTIONS  ────────────────────── */
 const periodOptions = ['All', 'Last 7 days', 'Last 2 weeks', 'Last month', 'Last 3 months', 'Last 6 months', 'Last year', 'Custom range'];
@@ -83,6 +86,13 @@ const DataList = ({ navigation, route }) => {
   const [measurements, setMeasurements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  
+    // Changes Added 
+   // Calendar states
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState('from'); // 'from' or 'to'
+  const [tempDate, setTempDate] = useState(new Date());
+
 
   /* ───── DATE FILTER LOGIC ───── */
   const getDateRange = () => {
@@ -107,8 +117,8 @@ const DataList = ({ navigation, route }) => {
     } else if (selectedPeriod === 'Last year') {
       start.setFullYear(now.getFullYear() - 1);
     } else if (selectedPeriod === 'Custom range' && fromDate && toDate) {
-      start = new Date(fromDate);
-      end = new Date(toDate);
+      start = parseDate(fromDate);
+      end = parseDate(toDate);
     }
 
     return { start, end };
@@ -347,6 +357,19 @@ const DataList = ({ navigation, route }) => {
     return `${h}:${m} ${d.getHours() >= 12 ? 'PM' : 'AM'}`;
   };
 
+  /* ───── ADD Chnages ───── */
+  const parseDate = (dateString) => {
+    if (!dateString) return new Date();
+    const parts = dateString.split('/');
+    if (parts.length === 3) {
+      const month = parseInt(parts[0]) - 1;
+      const day = parseInt(parts[1]);
+      const year = parseInt(parts[2]) + (parts[2].length === 2 ? 2000 : 0);
+      return new Date(year, month, day);
+    }
+    return new Date();
+  };
+
   const getTitle = () => ({
     bloodPressure: 'Blood Pressure',
     bloodGlucose: 'Blood Glucose',
@@ -379,6 +402,36 @@ const DataList = ({ navigation, route }) => {
     labelColor: () => TEXT_LIGHT,
     propsForDots: { r: '5', strokeWidth: '2', stroke: NAVY_BLUE },
     propsForLabels: { fontSize: 10 },
+  };
+
+   /* ───── Add Changes ───── */
+  /* ───── CALENDAR HANDLER ───── */
+  const handleDateSelect = (selectedDate) => {
+    if (selectedDate) {
+      const formattedDate = selectedDate.toLocaleDateString('en-US', {
+        month: '2-digit',
+        day: '2-digit',
+        year: 'numeric'
+      });
+      
+      if (showDatePicker === 'from') {
+        setFromDate(formattedDate);
+      } else {
+        setToDate(formattedDate);
+      }
+      setShowCalendar(false);
+    }
+  };
+  const handleCalendarOpen = (type) => {
+    setShowDatePicker(type);
+    if (type === 'from' && fromDate) {
+      setTempDate(parseDate(fromDate));
+    } else if (type === 'to' && toDate) {
+      setTempDate(parseDate(toDate));
+    } else {
+      setTempDate(new Date());
+    }
+    setShowCalendar(true);
   };
 
   return (
@@ -429,7 +482,7 @@ const DataList = ({ navigation, route }) => {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.dateRow}>
+              {/* <View style={styles.dateRow}>
                 <TextInput
                   style={[styles.dateInput, dateRangeType !== 'custom' && styles.disabled]}
                   placeholder="mm/dd/yyyy"
@@ -447,7 +500,51 @@ const DataList = ({ navigation, route }) => {
                   onChangeText={setToDate}
                   placeholderTextColor={TEXT_LIGHT}
                 />
+              </View> */}
+
+
+              <View style={styles.dateRow}>
+                {/* From Date with Calendar */}
+                <View style={styles.dateInputContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.dateInputTouchable,
+                      dateRangeType !== 'custom' && styles.disabled
+                    ]}
+                    disabled={dateRangeType !== 'custom'}
+                    onPress={() => handleCalendarOpen('from')}
+                  >
+                    <Text style={[
+                      styles.dateInputText,
+                      !fromDate && { color: TEXT_LIGHT }
+                    ]}>
+                      {fromDate || "mm/dd/yyyy"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                
+                <Text style={styles.to}>to</Text>
+                
+                {/* To Date with Calendar */}
+                <View style={styles.dateInputContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.dateInputTouchable,
+                      dateRangeType !== 'custom' && styles.disabled
+                    ]}
+                    disabled={dateRangeType !== 'custom'}
+                    onPress={() => handleCalendarOpen('to')}
+                  >
+                    <Text style={[
+                      styles.dateInputText,
+                      !toDate && { color: TEXT_LIGHT }
+                    ]}>
+                      {toDate || "mm/dd/yyyy"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
+           
 
               <View style={styles.row}>
                 <Text style={styles.sortLabel}>Sort Data by</Text>
@@ -567,10 +664,47 @@ const DataList = ({ navigation, route }) => {
         onSelect={setSortBy}
         onClose={() => setShowSortModal(false)}
       />
+
+      {/* Calendar Modal */}
+      <Modal
+        transparent={true}
+        visible={showCalendar}
+        animationType="fade"
+        onRequestClose={() => setShowCalendar(false)}
+      >
+        <TouchableOpacity 
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+          activeOpacity={1}
+          onPress={() => setShowCalendar(false)}
+        >
+          <View style={{ backgroundColor: WHITE, borderRadius: 10 }}>
+            <DateTimePicker
+              value={tempDate}
+              mode="date"
+              display="spinner"
+              onChange={(event, selectedDate) => {
+                if (selectedDate) {
+                  handleDateSelect(selectedDate);
+                }
+                setShowCalendar(false);
+              }}
+              style={{ width: 300, height: 200 }}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+
     </SafeAreaView>
   );
 };
 
+/* ──────────────────────  STYLES  ────────────────────── */
 /* ──────────────────────  STYLES  ────────────────────── */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: NAVY_BLUE },
@@ -685,7 +819,7 @@ const styles = StyleSheet.create({
   },
   radioLabel: { 
     fontSize: scaleFont(14), 
-    color: colors.textSecondary || TEXT_LIGHT 
+    color: TEXT_LIGHT 
   },
   dropdown: {
     flex: 1,
@@ -715,16 +849,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between', 
     marginBottom: scaleHeight(12) 
   },
-  dateInput: {
+  dateInputContainer: {
     flex: 1,
+  },
+  dateInputTouchable: {
+    height: scaleHeight(40),
     backgroundColor: WHITE,
-    paddingHorizontal: scaleWidth(12),
-    paddingVertical: scaleHeight(10),
     borderRadius: scaleWidth(8),
-    fontSize: scaleFont(14),
-    marginHorizontal: scaleWidth(4),
     borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
+    justifyContent: 'center',
+    paddingHorizontal: scaleWidth(12),
+  },
+  dateInputText: {
+    fontSize: scaleFont(14),
     color: NAVY_BLUE,
     fontWeight: '600',
   },
@@ -734,9 +872,81 @@ const styles = StyleSheet.create({
     marginHorizontal: scaleWidth(8) 
   },
 
+  // Calendar Styles
+  calendarModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  calendarContainer: {
+    backgroundColor: WHITE,
+    borderRadius: scaleWidth(12),
+    padding: scaleWidth(20),
+    width: '90%',
+    maxWidth: 400,
+    ...Platform.select({
+      ios: {
+        marginBottom: scaleHeight(100),
+      },
+    }),
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: scaleHeight(20),
+  },
+  calendarTitle: {
+    fontSize: scaleFont(18),
+    fontWeight: '600',
+    color: NAVY_BLUE,
+  },
+  closeButton: {
+    padding: scaleWidth(8),
+  },
+  closeButtonText: {
+    fontSize: scaleFont(20),
+    color: TEXT_LIGHT,
+  },
+  dateTimePicker: {
+    width: '100%',
+    ...Platform.select({
+      ios: {
+        height: scaleHeight(200),
+      },
+    }),
+  },
+  calendarButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: scaleHeight(20),
+    gap: scaleWidth(12),
+  },
+  calendarButton: {
+    paddingHorizontal: scaleWidth(20),
+    paddingVertical: scaleHeight(10),
+    borderRadius: scaleWidth(8),
+    borderWidth: scaleWidth(1),
+    borderColor: BORDER_GREY,
+  },
+  calendarButtonText: {
+    color: TEXT_LIGHT,
+    fontSize: scaleFont(14),
+  },
+  calendarButtonPrimary: {
+    backgroundColor: NAVY_BLUE,
+    borderColor: NAVY_BLUE,
+  },
+  calendarButtonPrimaryText: {
+    color: WHITE,
+    fontSize: scaleFont(14),
+    fontWeight: '600',
+  },
+
   sortLabel: { 
     fontSize: scaleFont(14), 
-    color: colors.textSecondary || TEXT_LIGHT, 
+    color: TEXT_LIGHT, 
     width: scaleWidth(100) 
   },
   queryBtn: {
