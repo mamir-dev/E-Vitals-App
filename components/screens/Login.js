@@ -43,6 +43,16 @@ const Login = ({ navigation }) => {
   const [showOtp, setShowOtp] = useState(false);
   const [otp, setOtp] = useState('');
 
+  // Log API config on component mount for debugging
+  React.useEffect(() => {
+    const { API_CONFIG } = require('../../config/api');
+    console.log('📱 API Configuration:', {
+      BASE_URL: API_CONFIG.BASE_URL,
+      TIMEOUT: API_CONFIG.TIMEOUT,
+      Platform: require('react-native').Platform.OS
+    });
+  }, []);
+
   const handleLogin = async () => {
     if (!username.trim()) {
       Alert.alert('Error', 'Please enter your username');
@@ -54,8 +64,10 @@ const Login = ({ navigation }) => {
     }
 
     setIsLoading(true);
+    console.log('🔐 Attempting login for user:', username);
     try {
       const data = await apiService.login(username, password, false);
+      console.log('✅ Login successful:', data);
 
       // Check if OTP is required
       if (data.requires_otp) {
@@ -71,12 +83,13 @@ const Login = ({ navigation }) => {
       // Store user data
       if (data.user) {
         await AsyncStorage.setItem('user', JSON.stringify(data.user));
-        // Also store practice_id and patient_id if available for easier access
+        // Also store practice_id and user_id (for API calls) if available
         if (data.user.practice_id) {
           await AsyncStorage.setItem('practiceId', String(data.user.practice_id));
         }
-        if (data.user.patient_id) {
-          await AsyncStorage.setItem('patientId', String(data.user.patient_id));
+        // Store user.id (user_id) for API calls - this is the numeric ID needed
+        if (data.user.id) {
+          await AsyncStorage.setItem('patientId', String(data.user.id));
         }
       }
 
@@ -86,8 +99,21 @@ const Login = ({ navigation }) => {
         routes: [{ name: 'MainTabs' }],
       });
     } catch (error) {
-      console.error('Login error:', error);
-      Alert.alert('Login Failed', error.message || 'Invalid credentials or server error');
+      console.error('❌ Login error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack
+      });
+      
+      // Show user-friendly error message
+      let errorMessage = error.message || 'Login failed. Please try again.';
+      
+      // Provide specific guidance based on error type
+      if (error.message.includes('timeout') || error.message.includes('connect')) {
+        errorMessage = 'Cannot connect to server.\n\nPlease ensure:\n1. Backend server is running on port 3000\n2. For Android emulator, using IP: 10.0.2.2\n3. Check backend console for errors';
+      }
+      
+      Alert.alert('Login Failed', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -109,8 +135,9 @@ const Login = ({ navigation }) => {
         if (data.user.practice_id) {
           await AsyncStorage.setItem('practiceId', String(data.user.practice_id));
         }
-        if (data.user.patient_id) {
-          await AsyncStorage.setItem('patientId', String(data.user.patient_id));
+        // Store user.id (user_id) for API calls - this is the numeric ID needed
+        if (data.user.id) {
+          await AsyncStorage.setItem('patientId', String(data.user.id));
         }
       }
 

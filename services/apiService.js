@@ -3,13 +3,27 @@ import { getSessionCookie, buildCookieHeader, setSessionCookie, extractCookieFro
 import { isSessionExpired, handleApiError, safeParseResponse } from '../utils/errorHandler';
 
 /**
- * Make API request with session cookie handling
+ * Create a timeout promise
+ * @param {number} ms - Timeout in milliseconds
+ * @returns {Promise} - Promise that rejects after timeout
+ */
+const createTimeout = (ms) => {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(`Request timeout after ${ms}ms`)), ms);
+  });
+};
+
+/**
+ * Make API request with session cookie handling and timeout
  * @param {string} endpoint - API endpoint (relative to base URL)
  * @param {object} options - Fetch options
  * @returns {Promise<Response>} - Fetch response
  */
 const apiRequest = async (endpoint, options = {}) => {
   const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+  
+  console.log('🌐 Making API request to:', url);
+  console.log('📋 Request method:', options.method || 'GET');
   
   // Get session cookie (session ID from backend response)
   const sessionCookie = await getSessionCookie();
@@ -35,7 +49,16 @@ const apiRequest = async (endpoint, options = {}) => {
   };
   
   try {
-    const response = await fetch(url, fetchOptions);
+    // Create timeout promise
+    const timeoutPromise = createTimeout(API_CONFIG.TIMEOUT || 30000);
+    
+    // Race between fetch and timeout
+    const response = await Promise.race([
+      fetch(url, fetchOptions),
+      timeoutPromise
+    ]);
+    
+    console.log('✅ API response received:', response.status, response.statusText);
     
     // Try to extract cookie from response (may not work in React Native)
     // But also check response body for session_id (for mobile clients)
@@ -51,8 +74,17 @@ const apiRequest = async (endpoint, options = {}) => {
     
     return response;
   } catch (error) {
-    console.error('API request error:', error);
-    throw error;
+    console.error('❌ API request error:', error.message);
+    console.error('📡 Failed URL:', url);
+    
+    // Provide more helpful error messages
+    if (error.message.includes('timeout')) {
+      throw new Error('Request timed out. Please check your internet connection and ensure the server is running.');
+    } else if (error.message.includes('Network request failed') || error.message.includes('Failed to connect')) {
+      throw new Error('Cannot connect to server. Please check:\n1. Backend server is running\n2. Correct IP address (10.0.2.2 for Android emulator)\n3. Both devices on same network');
+    } else {
+      throw error;
+    }
   }
 };
 
@@ -365,6 +397,296 @@ const apiService = {
     
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to get weight data');
+      throw new Error(errorMessage);
+    }
+    
+    return data;
+  },
+  
+  /**
+   * Get practice ranges/thresholds
+   * @param {number} practiceId - Practice ID
+   * @returns {Promise<object>} - Practice ranges
+   */
+  getPracticeRanges: async (practiceId) => {
+    const endpoint = API_ENDPOINTS.GET_PRACTICE_RANGES(practiceId);
+    const response = await apiRequest(endpoint, {
+      method: 'GET',
+    });
+    
+    if (await isSessionExpired(response)) {
+      await setSessionCookie(null);
+      throw new Error('Session expired. Please login again.');
+    }
+    
+    const data = await safeParseResponse(response);
+    
+    if (!response.ok || !data || !data.success) {
+      const errorMessage = await handleApiError(response, 'Failed to get practice ranges');
+      throw new Error(errorMessage);
+    }
+    
+    return data;
+  },
+  
+  /**
+   * Get account settings
+   * @returns {Promise<object>} - Account settings
+   */
+  getAccountSettings: async () => {
+    const response = await apiRequest(API_ENDPOINTS.GET_ACCOUNT_SETTINGS, {
+      method: 'GET',
+    });
+    
+    if (await isSessionExpired(response)) {
+      await setSessionCookie(null);
+      throw new Error('Session expired. Please login again.');
+    }
+    
+    const data = await safeParseResponse(response);
+    
+    if (!response.ok || !data || !data.success) {
+      const errorMessage = await handleApiError(response, 'Failed to get account settings');
+      throw new Error(errorMessage);
+    }
+    
+    return data;
+  },
+  
+  /**
+   * Toggle two-way authentication
+   * @param {number} status - 0 to disable, 1 to enable
+   * @returns {Promise<object>} - Response
+   */
+  toggleTwoWayAuth: async (status) => {
+    const endpoint = API_ENDPOINTS.TOGGLE_TWO_WAY_AUTH(status);
+    const response = await apiRequest(endpoint, {
+      method: 'PUT',
+    });
+    
+    if (await isSessionExpired(response)) {
+      await setSessionCookie(null);
+      throw new Error('Session expired. Please login again.');
+    }
+    
+    const data = await safeParseResponse(response);
+    
+    if (!response.ok || !data || !data.success) {
+      const errorMessage = await handleApiError(response, 'Failed to toggle two-way authentication');
+      throw new Error(errorMessage);
+    }
+    
+    return data;
+  },
+  
+  /**
+   * Update session settings
+   * @param {number} sessionTime - Session timeout in minutes
+   * @returns {Promise<object>} - Response
+   */
+  updateSessionSettings: async (sessionTime) => {
+    const response = await apiRequest(API_ENDPOINTS.UPDATE_SESSION_SETTINGS, {
+      method: 'PUT',
+      body: JSON.stringify({ lifetime: sessionTime }),
+    });
+    
+    if (await isSessionExpired(response)) {
+      await setSessionCookie(null);
+      throw new Error('Session expired. Please login again.');
+    }
+    
+    const data = await safeParseResponse(response);
+    
+    if (!response.ok || !data || !data.success) {
+      const errorMessage = await handleApiError(response, 'Failed to update session settings');
+      throw new Error(errorMessage);
+    }
+    
+    return data;
+  },
+  
+  /**
+   * Clear cache
+   * @returns {Promise<object>} - Response
+   */
+  clearCache: async () => {
+    const response = await apiRequest(API_ENDPOINTS.CLEAR_CACHE, {
+      method: 'POST',
+    });
+    
+    if (await isSessionExpired(response)) {
+      await setSessionCookie(null);
+      throw new Error('Session expired. Please login again.');
+    }
+    
+    const data = await safeParseResponse(response);
+    
+    if (!response.ok || !data || !data.success) {
+      const errorMessage = await handleApiError(response, 'Failed to clear cache');
+      throw new Error(errorMessage);
+    }
+    
+    return data;
+  },
+  
+  /**
+   * Forgot password with OTP (sends OTP via email)
+   * @param {string} email - User email
+   * @returns {Promise<object>} - Response
+   */
+  forgotPasswordWithOTP: async (email) => {
+    const endpoint = API_ENDPOINTS.FORGOT_PASSWORD_OTP;
+    const fullUrl = `${API_CONFIG.BASE_URL}${endpoint}`;
+    
+    console.log('📧 Forgot Password OTP Request:', {
+      endpoint,
+      fullUrl,
+      email: email ? email.substring(0, 3) + '***' : 'missing'
+    });
+    
+    const response = await apiRequest(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+    
+    console.log('📧 Forgot Password OTP Response:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      url: response.url || fullUrl
+    });
+    
+    const data = await safeParseResponse(response);
+    
+    console.log('📧 Forgot Password OTP Response Data:', data);
+    
+    if (!response.ok) {
+      // If 404, provide specific error message about missing endpoint
+      if (response.status === 404) {
+        const errorMessage = `The OTP endpoint is not available on this server. Please ensure the backend server has the '/api/users/forgot-password-otp' endpoint deployed.`;
+        console.error('📧 Forgot Password OTP Error - Endpoint not found:', {
+          status: response.status,
+          endpoint,
+          fullUrl,
+          serverResponse: data
+        });
+        throw new Error(errorMessage);
+      }
+      
+      const errorMessage = await handleApiError(response, 'Failed to send OTP');
+      console.error('📧 Forgot Password OTP Error:', {
+        status: response.status,
+        errorMessage,
+        responseData: data
+      });
+      throw new Error(errorMessage);
+    }
+    
+    if (!data || !data.success) {
+      const errorMessage = data?.message || 'Failed to send OTP';
+      console.error('📧 Forgot Password OTP Error - Invalid response:', {
+        responseData: data
+      });
+      throw new Error(errorMessage);
+    }
+    
+    return data;
+  },
+  
+  /**
+   * Verify password reset OTP
+   * @param {string} email - User email
+   * @param {string} otp - OTP code
+   * @returns {Promise<object>} - Response
+   */
+  verifyPasswordResetOTP: async (email, otp) => {
+    console.log('🔐 Verifying password reset OTP for email:', email);
+    
+    // Ensure we have a session cookie before making the request
+    const sessionCookie = await getSessionCookie();
+    console.log('🍪 Session cookie available:', sessionCookie ? 'Yes' : 'No');
+    
+    const response = await apiRequest(API_ENDPOINTS.VERIFY_PASSWORD_RESET_OTP, {
+      method: 'POST',
+      body: JSON.stringify({ email, otp }),
+    });
+    
+    console.log('📥 Verify OTP response status:', response.status);
+    
+    const data = await safeParseResponse(response);
+    console.log('📥 Verify OTP response data:', JSON.stringify(data, null, 2));
+    
+    // Check if response contains a session_id (for mobile clients)
+    if (data && data.session_id) {
+      await setSessionCookie(data.session_id);
+      console.log('✅ Session ID stored after OTP verification');
+    }
+    
+    if (!response.ok || !data || !data.success) {
+      const errorMessage = data?.message || await handleApiError(response, 'Failed to verify OTP');
+      console.error('❌ Verify OTP error:', errorMessage);
+      throw new Error(errorMessage);
+    }
+    
+    return data;
+  },
+  
+  /**
+   * Change password (for authenticated users)
+   * @param {string} currentPassword - Current password
+   * @param {string} newPassword - New password
+   * @returns {Promise<object>} - Response
+   */
+  changePassword: async (currentPassword, newPassword) => {
+    const response = await apiRequest(API_ENDPOINTS.CHANGE_PASSWORD, {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    
+    if (await isSessionExpired(response)) {
+      await setSessionCookie(null);
+      throw new Error('Session expired. Please login again.');
+    }
+    
+    const data = await safeParseResponse(response);
+    
+    if (!response.ok || !data || !data.success) {
+      const errorMessage = data?.message || await handleApiError(response, 'Failed to change password');
+      throw new Error(errorMessage);
+    }
+    
+    return data;
+  },
+  
+  /**
+   * Reset password with OTP (after OTP verification)
+   * @param {string} email - User email
+   * @param {string} password - New password
+   * @returns {Promise<object>} - Response
+   */
+  resetPasswordWithOTP: async (email, password) => {
+    console.log('🔐 Resetting password with OTP for email:', email);
+    
+    // Ensure we have a session cookie before making the request
+    const sessionCookie = await getSessionCookie();
+    console.log('🍪 Session cookie available:', sessionCookie ? 'Yes' : 'No');
+    
+    const response = await apiRequest(API_ENDPOINTS.RESET_PASSWORD_OTP, {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    
+    console.log('📥 Reset password response status:', response.status);
+    
+    const data = await safeParseResponse(response);
+    console.log('📥 Reset password response data:', JSON.stringify(data, null, 2));
+    
+    if (!response.ok || !data || !data.success) {
+      // Get the actual error message from the backend
+      const errorMessage = data?.message || await handleApiError(response, 'Failed to reset password');
+      console.error('❌ Reset password error:', errorMessage);
+      console.error('❌ Response status:', response.status);
+      console.error('❌ Response data:', data);
       throw new Error(errorMessage);
     }
     

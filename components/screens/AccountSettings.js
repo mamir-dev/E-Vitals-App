@@ -1,4 +1,4 @@
-import React, { useState } from 'react'; 
+import React, { useState, useEffect } from 'react'; 
 import {
   View,
   Text,
@@ -11,11 +11,14 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  StatusBar
+  StatusBar,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../../config/globall';
 import { scale, verticalScale } from 'react-native-size-matters';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import apiService from '../../services/apiService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -33,27 +36,153 @@ const AccountSettings = ({ navigation }) => {
   const [twoWayAuthEnabled, setTwoWayAuthEnabled] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
   const [sessionTimeout, setSessionTimeout] = useState('60');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isTogglingAuth, setIsTogglingAuth] = useState(false);
+  const [isUpdatingSession, setIsUpdatingSession] = useState(false);
+  const [isClearingCache, setIsClearingCache] = useState(false);
 
-  const handleUpdateSessionTimeout = () => {
-    alert(`Session timeout updated to ${sessionTimeout} minutes`);
+  // Load current settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Load two-way auth status from user data
+        const userData = await AsyncStorage.getItem('user');
+        if (userData) {
+          const user = JSON.parse(userData);
+          setTwoWayAuthEnabled(user.is_two_way_auth === 1 || user.is_two_way_auth === true);
+        }
+        
+        // Try to get account settings from API
+        try {
+          const settingsResult = await apiService.getAccountSettings();
+          if (settingsResult && settingsResult.data) {
+            const settings = settingsResult.data;
+            if (settings.is_two_way_auth !== undefined) {
+              setTwoWayAuthEnabled(settings.is_two_way_auth === 1 || settings.is_two_way_auth === true);
+            }
+            if (settings.session_time) {
+              setSessionTimeout(String(settings.session_time));
+            }
+          }
+        } catch (apiError) {
+          console.log('⚠️ Could not fetch account settings from API:', apiError.message);
+          // Continue with data from AsyncStorage
+        }
+      } catch (error) {
+        console.error('❌ Error loading settings:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadSettings();
+  }, []);
+
+  const handleUpdateSessionTimeout = async () => {
+    const timeoutValue = parseInt(sessionTimeout);
+    
+    if (!timeoutValue || timeoutValue < 1) {
+      Alert.alert('Error', 'Please enter a valid session timeout (minimum 1 minute)');
+      return;
+    }
+    
+    setIsUpdatingSession(true);
+    try {
+      const result = await apiService.updateSessionSettings(timeoutValue);
+      
+      if (result && result.success) {
+        Alert.alert('Success', `Session timeout updated to ${timeoutValue} minutes`);
+        
+        // Update user data in AsyncStorage if available
+        const userData = await AsyncStorage.getItem('user');
+        if (userData) {
+          const user = JSON.parse(userData);
+          user.session_time = timeoutValue;
+          await AsyncStorage.setItem('user', JSON.stringify(user));
+        }
+      } else {
+        Alert.alert('Error', result?.message || 'Failed to update session timeout');
+      }
+    } catch (error) {
+      console.error('❌ Error updating session timeout:', error);
+      Alert.alert('Error', error.message || 'Failed to update session timeout');
+    } finally {
+      setIsUpdatingSession(false);
+    }
   };
 
-  const toggleTwoWayAuth = () => {
-    setTwoWayAuthEnabled(prev => !prev);
-    alert(`Two-way authentication ${!twoWayAuthEnabled ? 'enabled' : 'disabled'}`);
+  const toggleTwoWayAuth = async () => {
+    const newStatus = twoWayAuthEnabled ? 0 : 1;
+    
+    setIsTogglingAuth(true);
+    try {
+      const result = await apiService.toggleTwoWayAuth(newStatus);
+      
+      if (result && result.success) {
+        setTwoWayAuthEnabled(newStatus === 1);
+        
+        // Update user data in AsyncStorage
+        const userData = await AsyncStorage.getItem('user');
+        if (userData) {
+          const user = JSON.parse(userData);
+          user.is_two_way_auth = newStatus;
+          await AsyncStorage.setItem('user', JSON.stringify(user));
+        }
+        
+        Alert.alert(
+          'Success',
+          `Two-way authentication ${newStatus === 1 ? 'enabled' : 'disabled'} successfully`
+        );
+      } else {
+        Alert.alert('Error', result?.message || 'Failed to toggle two-way authentication');
+      }
+    } catch (error) {
+      console.error('❌ Error toggling two-way auth:', error);
+      Alert.alert('Error', error.message || 'Failed to toggle two-way authentication');
+    } finally {
+      setIsTogglingAuth(false);
+    }
   };
 
   const handleClearCache = () => {
     Alert.alert(
       'Clear Cache',
-      'Are you sure you want to clear cache?',
+      'Are you sure you want to clear cache? This will remove temporary files and stored data.',
       [
         { text: 'Cancel', style: 'cancel' },
         { 
           text: 'Clear', 
           style: 'destructive',
-          onPress: () => {
-            alert('Cache cleared successfully!');
+          onPress: async () => {
+            setIsClearingCache(true);
+            try {
+              // Clear AsyncStorage cache (keep essential data like user session)
+              const keysToKeep = ['user', 'practiceId', 'patientId', 'evitals_session'];
+              const allKeys = await AsyncStorage.getAllKeys();
+              
+              const keysToRemove = allKeys.filter(key => !keysToKeep.includes(key));
+              
+              if (keysToRemove.length > 0) {
+                await AsyncStorage.multiRemove(keysToRemove);
+                console.log('✅ Cleared cache keys:', keysToRemove);
+              }
+              
+              // Also call backend API to clear server-side cache
+              try {
+                await apiService.clearCache();
+              } catch (apiError) {
+                console.log('⚠️ Backend cache clear failed (non-critical):', apiError.message);
+              }
+              
+              Alert.alert('Success', 'Cache cleared successfully!');
+            } catch (error) {
+              console.error('❌ Error clearing cache:', error);
+              Alert.alert('Error', 'Failed to clear cache. Please try again.');
+            } finally {
+              setIsClearingCache(false);
+            }
           }
         }
       ]
@@ -92,6 +221,13 @@ const AccountSettings = ({ navigation }) => {
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
               >
+                {isLoading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={HEADER_COLOR} />
+                    <Text style={styles.loadingText}>Loading settings...</Text>
+                  </View>
+                ) : (
+                  <>
 
                 {/* ✅ Security Section (unchanged) */}
                 <View style={styles.sectionContainer}>
@@ -105,13 +241,18 @@ const AccountSettings = ({ navigation }) => {
                         Add an extra layer of security to your account
                       </Text>
                     </View>
-                    <Switch
-                      trackColor={{ false: colors.borderLight, true: HEADER_COLOR }}
-                      thumbColor={colors.white}
-                      ios_backgroundColor={colors.borderLight}
-                      onValueChange={toggleTwoWayAuth}
-                      value={twoWayAuthEnabled}
-                    />
+                    {isTogglingAuth ? (
+                      <ActivityIndicator size="small" color={HEADER_COLOR} />
+                    ) : (
+                      <Switch
+                        trackColor={{ false: colors.borderLight, true: HEADER_COLOR }}
+                        thumbColor={colors.white}
+                        ios_backgroundColor={colors.borderLight}
+                        onValueChange={toggleTwoWayAuth}
+                        value={twoWayAuthEnabled}
+                        disabled={isTogglingAuth}
+                      />
+                    )}
                   </View>
 
                   <View style={styles.separator} />
@@ -124,8 +265,16 @@ const AccountSettings = ({ navigation }) => {
                         Remove temporary files and free up space
                       </Text>
                     </View>
-                    <TouchableOpacity style={styles.clearCacheButton} onPress={handleClearCache}>
-                      <Text style={styles.clearCacheText}>Clear</Text>
+                    <TouchableOpacity 
+                      style={[styles.clearCacheButton, isClearingCache && styles.clearCacheButtonDisabled]} 
+                      onPress={handleClearCache}
+                      disabled={isClearingCache}
+                    >
+                      {isClearingCache ? (
+                        <ActivityIndicator size="small" color={colors.textWhite} />
+                      ) : (
+                        <Text style={styles.clearCacheText}>Clear</Text>
+                      )}
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -156,13 +305,22 @@ const AccountSettings = ({ navigation }) => {
                         onFocus={() => setFocusedField('sessionTimeout')}
                         onBlur={() => setFocusedField(null)}
                       />
-                      <TouchableOpacity style={styles.updateSessionButton} onPress={handleUpdateSessionTimeout}>
-                        <Text style={styles.updateSessionButtonText}>Update</Text>
+                      <TouchableOpacity 
+                        style={[styles.updateSessionButton, isUpdatingSession && styles.updateSessionButtonDisabled]} 
+                        onPress={handleUpdateSessionTimeout}
+                        disabled={isUpdatingSession}
+                      >
+                        {isUpdatingSession ? (
+                          <ActivityIndicator size="small" color={colors.textWhite} />
+                        ) : (
+                          <Text style={styles.updateSessionButtonText}>Update</Text>
+                        )}
                       </TouchableOpacity>
                     </View>
                   </View>
                 </View>
-
+                </>
+                )}
               </ScrollView>
             </KeyboardAvoidingView>
           </View>
@@ -427,5 +585,22 @@ const styles = StyleSheet.create({
     ...fonts.buttonText(colors.textWhite),
     fontSize: scaleFont(14),
     fontWeight: '600',
+  },
+  updateSessionButtonDisabled: {
+    opacity: 0.6,
+  },
+  clearCacheButtonDisabled: {
+    opacity: 0.6,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: verticalScale(40),
+  },
+  loadingText: {
+    marginTop: verticalScale(12),
+    fontSize: scaleFont(14),
+    color: colors.textSecondary,
   },
 });
