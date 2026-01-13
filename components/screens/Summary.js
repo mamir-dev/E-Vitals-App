@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, fonts } from '../../config/globall';
 import apiService from '../../services/apiService';
 import { API_CONFIG } from '../../config/api';
@@ -42,7 +42,7 @@ const TEXT_LIGHT = '#666666';
 /* ──────────────────────  DROPDOWN OPTIONS  ────────────────────── */
 const periodOptions = [
   'Last 7 days',
-  'Last 2 weeks', 
+  'Last 2 weeks',
   'Last month',
   'Last 90 Days',
   'Last year',
@@ -151,23 +151,23 @@ export default function SummaryScreen({ navigation, route }) {
   const fetchPatientData = async () => {
     try {
       setIsLoading(true);
-      
+
       // Get practiceId and patients.id (not user_id)
       let practiceId = null;
       let patientId = null;
-      
+
       const userData = await AsyncStorage.getItem('user');
       if (userData) {
         const user = JSON.parse(userData);
         practiceId = user.practice_id || await AsyncStorage.getItem('practiceId');
-        
+
         // Try to get patients.id from stored patient details
         const storedPatientDetails = await AsyncStorage.getItem('patientDetails');
         if (storedPatientDetails) {
           const details = JSON.parse(storedPatientDetails);
           patientId = details.patients_table_id || details.id || details.patient_id;
         }
-        
+
         // If not found, fetch patient details to get patients.id
         if (practiceId && user.id && !patientId) {
           try {
@@ -187,7 +187,7 @@ export default function SummaryScreen({ navigation, route }) {
           patientId = String(user.id);
         }
       }
-      
+
       if (patientId) {
         setPatientId(patientId);
         const dateRangeValue = periodToApiValue[selectedPeriod];
@@ -224,7 +224,7 @@ export default function SummaryScreen({ navigation, route }) {
       // Get practiceId and patientId (patients.id, not user_id)
       let practiceId = null;
       let patientId = id; // This should be patients.id (patients_table_id)
-      
+
       const userData = await AsyncStorage.getItem('user');
       if (userData) {
         const user = JSON.parse(userData);
@@ -246,7 +246,7 @@ export default function SummaryScreen({ navigation, route }) {
           }
         }
       }
-      
+
       // If not found, fetch patient details to get patients.id
       if (!practiceId || !patientId) {
         try {
@@ -278,18 +278,18 @@ export default function SummaryScreen({ navigation, route }) {
           console.log('⚠️ Could not fetch patient details from API:', apiError.message);
         }
       }
-      
+
       if (!practiceId || !patientId) {
         throw new Error('Practice ID or Patient ID missing');
       }
-      
+
       console.log('📊 Fetching graph data for:', { practiceId, patientId, activeChart, dateRangeValue });
-      
+
       // Calculate date range based on period selection
       const now = new Date();
       let fromDateStr = null;
       let toDateStr = null;
-      
+
       if (isQuickSelect === 'range') {
         // Calculate date range based on periodToApiValue
         const daysMap = {
@@ -300,7 +300,7 @@ export default function SummaryScreen({ navigation, route }) {
           5: 90,   // Last 90 Days
           6: null  // All
         };
-        
+
         const days = daysMap[dateRangeValue];
         if (days) {
           const startDate = new Date(now);
@@ -313,25 +313,23 @@ export default function SummaryScreen({ navigation, route }) {
         if (startDate && endDate) {
           fromDateStr = startDate;
           toDateStr = endDate;
-        } else if (dateRangeValue === 7 && fromDate && toDate) {
-          fromDateStr = fromDate;
-          toDateStr = toDate;
-        } else if (dateRangeValue === 7 && (!fromDate || !toDate)) {
+        } else {
           console.log("⚠️ Custom range selected but dates are missing");
-          Alert.alert('Error', 'Please select both start and end dates for custom range');
+          // Only show alert if this was triggered by a manual query (handled in handleQuery)
+          // For initial loads, just skip silently
           setIsLoading(false);
           return;
         }
       }
-      
+
       // Fetch measurements based on active chart type
       console.log(`📡 Fetching ${activeChart} measurements for graph...`);
       console.log("📅 Date range:", fromDateStr, 'to', toDateStr);
-      
+
       try {
         let measurementsResult = null;
         let measurements = [];
-        
+
         // Fetch data based on chart type
         if (activeChart === 'bloodPressure') {
           measurementsResult = await apiService.getBloodPressure(practiceId, patientId, {
@@ -349,33 +347,34 @@ export default function SummaryScreen({ navigation, route }) {
             toDate: toDateStr,
           });
         }
-        
-        console.log(`✅ ${activeChart} API Response received:`, measurementsResult);
-        
+
+        console.log(`✅ ${activeChart} API Response:`, JSON.stringify(measurementsResult, null, 2));
+
         if (measurementsResult && measurementsResult.success && measurementsResult.data) {
-          // Backend returns data directly in result.data array (not nested in measurements)
-          measurements = Array.isArray(measurementsResult.data) 
-            ? measurementsResult.data 
+          measurements = Array.isArray(measurementsResult.data)
+            ? measurementsResult.data
             : (measurementsResult.data?.measurements ? (Array.isArray(measurementsResult.data.measurements) ? measurementsResult.data.measurements : [measurementsResult.data.measurements]) : []);
-          
+
           console.log(`📋 ${activeChart} measurements count:`, measurements.length);
-          console.log(`📋 Sample measurement:`, measurements[0]);
-          
+          if (measurements.length > 0) {
+            console.log(`📋 Sample ${activeChart} data point:`, JSON.stringify(measurements[0], null, 2));
+          }
+
           if (measurements.length === 0) {
             console.log('⚠️ No measurements found, setting empty graph data');
-            setApiData({ 
-              success: true, 
+            setApiData({
+              success: true,
               data: {
                 dailyTrendDate: [],
                 dailyTrendGraphData: activeChart === 'bloodPressure' ? { systolic: [], diastolic: [] } : { values: [] },
                 MeanChart: [],
                 xAxisData: []
-              } 
+              }
             });
             setIsLoading(false);
             return;
           }
-          
+
           // Transform measurements into graph data format based on chart type
           let graphData = {
             success: true,
@@ -386,17 +385,17 @@ export default function SummaryScreen({ navigation, route }) {
               xAxisData: []
             }
           };
-          
+
           // Sort measurements by date
           measurements.sort((a, b) => {
             const dateA = new Date(a.measure_new_date_time || a.measure_date_time || a.created_at);
             const dateB = new Date(b.measure_new_date_time || b.measure_date_time || b.created_at);
             return dateA - dateB;
           });
-          
+
           console.log(`📅 Sorted measurements, first date:`, measurements[0]?.measure_new_date_time || measurements[0]?.measure_date_time || measurements[0]?.created_at);
           console.log(`📅 Last date:`, measurements[measurements.length - 1]?.measure_new_date_time || measurements[measurements.length - 1]?.measure_date_time || measurements[measurements.length - 1]?.created_at);
-          
+
           // Group by date and calculate daily averages
           const dailyData = {};
           let processedCount = 0;
@@ -406,30 +405,30 @@ export default function SummaryScreen({ navigation, route }) {
               console.log('⚠️ Measurement missing date:', measurement);
               return;
             }
-            
+
             const date = new Date(dateStr);
             if (isNaN(date.getTime())) {
               console.log('⚠️ Invalid date in measurement:', dateStr, measurement);
               return;
             }
-            
+
             const dateKey = date.toISOString().split('T')[0];
             processedCount++;
-            
+
             if (!dailyData[dateKey]) {
               dailyData[dateKey] = {
                 dates: [],
                 values: []
               };
             }
-            
+
             if (activeChart === 'bloodPressure') {
               const systolic = parseFloat(measurement.systolic_pressure || measurement.systolic || 0);
               const diastolic = parseFloat(measurement.diastolic_pressure || measurement.diastolic || 0);
-              
+
               if (!dailyData[dateKey].systolic) dailyData[dateKey].systolic = [];
               if (!dailyData[dateKey].diastolic) dailyData[dateKey].diastolic = [];
-              
+
               // Allow 0 values but filter out NaN
               if (!isNaN(systolic)) {
                 dailyData[dateKey].systolic.push(systolic);
@@ -451,40 +450,40 @@ export default function SummaryScreen({ navigation, route }) {
                 dailyData[dateKey].values.push(weight);
               }
             }
-            
+
             dailyData[dateKey].dates.push(date);
           });
-          
+
           // Initialize graph data structure
           if (activeChart === 'bloodPressure') {
             graphData.data.dailyTrendGraphData = { systolic: [], diastolic: [] };
           } else {
             graphData.data.dailyTrendGraphData = { values: [] };
           }
-          
+
           // Create trend data (daily averages)
           const sortedDates = Object.keys(dailyData).sort();
           console.log(`📅 Processing ${sortedDates.length} days of data for ${activeChart} (processed ${processedCount} measurements)`);
-          
+
           if (sortedDates.length === 0) {
             console.log('⚠️ No dates found in dailyData, measurements might be empty or invalid');
-            setApiData({ 
-              success: true, 
+            setApiData({
+              success: true,
               data: {
                 dailyTrendDate: [],
                 dailyTrendGraphData: activeChart === 'bloodPressure' ? { systolic: [], diastolic: [] } : { values: [] },
                 MeanChart: [],
                 xAxisData: []
-              } 
+              }
             });
             setIsLoading(false);
             return;
           }
-          
+
           sortedDates.forEach(dateKey => {
             const dayData = dailyData[dateKey];
             graphData.data.dailyTrendDate.push(dateKey);
-            
+
             if (activeChart === 'bloodPressure') {
               const avgSystolic = dayData.systolic && dayData.systolic.length > 0
                 ? dayData.systolic.reduce((a, b) => a + b, 0) / dayData.systolic.length
@@ -492,20 +491,20 @@ export default function SummaryScreen({ navigation, route }) {
               const avgDiastolic = dayData.diastolic && dayData.diastolic.length > 0
                 ? dayData.diastolic.reduce((a, b) => a + b, 0) / dayData.diastolic.length
                 : null;
-              
+
               // Only push if we have valid averages
               if (avgSystolic !== null && !isNaN(avgSystolic)) {
                 graphData.data.dailyTrendGraphData.systolic.push(avgSystolic);
               } else {
                 graphData.data.dailyTrendGraphData.systolic.push(0);
               }
-              
+
               if (avgDiastolic !== null && !isNaN(avgDiastolic)) {
                 graphData.data.dailyTrendGraphData.diastolic.push(avgDiastolic);
               } else {
                 graphData.data.dailyTrendGraphData.diastolic.push(0);
               }
-              
+
               // Mean chart data (same as trend for now)
               graphData.data.MeanChart.push({
                 avgOfSystolic: avgSystolic !== null && !isNaN(avgSystolic) ? avgSystolic : 0,
@@ -515,14 +514,14 @@ export default function SummaryScreen({ navigation, route }) {
               const avgValue = dayData.values && dayData.values.length > 0
                 ? dayData.values.reduce((a, b) => a + b, 0) / dayData.values.length
                 : null;
-              
+
               // Only push if we have valid average
               if (avgValue !== null && !isNaN(avgValue)) {
                 graphData.data.dailyTrendGraphData.values.push(avgValue);
               } else {
                 graphData.data.dailyTrendGraphData.values.push(0);
               }
-              
+
               // Mean chart data (same as trend for now)
               if (activeChart === 'bloodGlucose') {
                 graphData.data.MeanChart.push({
@@ -534,22 +533,22 @@ export default function SummaryScreen({ navigation, route }) {
                 });
               }
             }
-            
+
             graphData.data.xAxisData.push({
               hAxis: dateKey
             });
           });
-          
+
           console.log(`✅ Processed graph data:`, {
             dates: graphData.data.dailyTrendDate.length,
             systolic: activeChart === 'bloodPressure' ? graphData.data.dailyTrendGraphData.systolic.length : 'N/A',
             diastolic: activeChart === 'bloodPressure' ? graphData.data.dailyTrendGraphData.diastolic.length : 'N/A',
             values: activeChart !== 'bloodPressure' ? graphData.data.dailyTrendGraphData.values.length : 'N/A',
-            sampleData: activeChart === 'bloodPressure' 
+            sampleData: activeChart === 'bloodPressure'
               ? { systolic: graphData.data.dailyTrendGraphData.systolic.slice(0, 3), diastolic: graphData.data.dailyTrendGraphData.diastolic.slice(0, 3) }
               : { values: graphData.data.dailyTrendGraphData.values.slice(0, 3) }
           });
-          
+
           console.log(`✅ ${activeChart} graph data processed from measurements:`, {
             dailyTrendDateCount: graphData.data.dailyTrendDate.length,
             dailyTrendGraphData: graphData.data.dailyTrendGraphData,
@@ -559,12 +558,14 @@ export default function SummaryScreen({ navigation, route }) {
           setApiData(graphData);
         } else {
           console.log("⚠️ No measurements data in response");
-          setApiData({ success: true, data: {
-            dailyTrendDate: [],
-            dailyTrendGraphData: {},
-            MeanChart: [],
-            xAxisData: []
-          } });
+          setApiData({
+            success: true, data: {
+              dailyTrendDate: [],
+              dailyTrendGraphData: {},
+              MeanChart: [],
+              xAxisData: []
+            }
+          });
         }
       } catch (measurementsError) {
         console.error("❌ Error fetching measurements:", measurementsError);
@@ -593,7 +594,7 @@ export default function SummaryScreen({ navigation, route }) {
     const step = Math.max(1, Math.ceil(dates.length / 7));
     return dates.filter((_, index) => index % step === 0 || index === dates.length - 1);
   };
-  
+
   // Helper function to get mean X-axis
   const getMeanXAxis = (xAxisData) => {
     if (!xAxisData || !Array.isArray(xAxisData)) return [];
@@ -634,7 +635,7 @@ export default function SummaryScreen({ navigation, route }) {
       console.log('⚠️ getChartData: No apiData or apiData.data');
       return defaultData[activeChart];
     }
-    
+
     console.log('📊 getChartData: Processing chart data for', activeChart, {
       hasDailyTrendDate: !!apiData.data.dailyTrendDate,
       dailyTrendDateLength: apiData.data.dailyTrendDate?.length || 0,
@@ -644,15 +645,15 @@ export default function SummaryScreen({ navigation, route }) {
 
     // Process API data based on chart type
     const trendDates = apiData.data?.dailyTrendDate || [];
-    
+
     if (activeChart === 'bloodPressure') {
       const systolicData = apiData.data?.dailyTrendGraphData?.systolic || [];
       const diastolicData = apiData.data?.dailyTrendGraphData?.diastolic || [];
-      
+
       // Create aligned arrays where each date has corresponding data
       const alignedSystolic = [];
       const alignedDiastolic = [];
-      
+
       trendDates.forEach((date, index) => {
         if (index < systolicData.length) {
           const num = parseFloat(systolicData[index]);
@@ -660,7 +661,7 @@ export default function SummaryScreen({ navigation, route }) {
         } else {
           alignedSystolic.push(0);
         }
-        
+
         if (index < diastolicData.length) {
           const num = parseFloat(diastolicData[index]);
           alignedDiastolic.push(isNaN(num) ? 0 : num);
@@ -688,7 +689,7 @@ export default function SummaryScreen({ navigation, route }) {
           })
         };
       }
-      
+
       return {
         title: 'Blood Pressure',
         trend: trendData,
@@ -708,7 +709,7 @@ export default function SummaryScreen({ navigation, route }) {
         }
         return 0;
       });
-      
+
       let meanData = { glucose: [] };
       if (apiData.data?.MeanChart && Array.isArray(apiData.data.MeanChart) && apiData.data.MeanChart.length > 0) {
         meanData = {
@@ -718,7 +719,7 @@ export default function SummaryScreen({ navigation, route }) {
           })
         };
       }
-      
+
       return {
         title: 'Blood Glucose',
         trend: { glucose: alignedGlucose },
@@ -738,7 +739,7 @@ export default function SummaryScreen({ navigation, route }) {
         }
         return 0;
       });
-      
+
       let meanData = { weight: [] };
       if (apiData.data?.MeanChart && Array.isArray(apiData.data.MeanChart) && apiData.data.MeanChart.length > 0) {
         meanData = {
@@ -748,7 +749,7 @@ export default function SummaryScreen({ navigation, route }) {
           })
         };
       }
-      
+
       return {
         title: 'Weight',
         trend: { weight: alignedWeight },
@@ -760,7 +761,7 @@ export default function SummaryScreen({ navigation, route }) {
         allTrendDates: trendDates
       };
     }
-    
+
     return defaultData[activeChart];
   };
 
@@ -782,19 +783,19 @@ export default function SummaryScreen({ navigation, route }) {
       console.log('⚠️ createPath: Empty or no data provided');
       return '';
     }
-    
-    const validData = Array.isArray(data) 
+
+    const validData = Array.isArray(data)
       ? data.map(val => {
-          const num = parseFloat(val);
-          return isNaN(num) ? 0 : num;
-        })
+        const num = parseFloat(val);
+        return isNaN(num) ? 0 : num;
+      })
       : [0];
-    
+
     if (validData.length === 0) {
       console.log('⚠️ createPath: No valid data after parsing');
       return '';
     }
-    
+
     const xDivisor = Math.max(1, validData.length - 1);
     const range = maxValue - minValue;
     const effectiveRange = range === 0 ? 1 : range;
@@ -803,18 +804,18 @@ export default function SummaryScreen({ navigation, route }) {
       .map((value, index) => {
         const x = (index / xDivisor) * scaleWidth(250);
         const y = chartH - ((value - minValue) / effectiveRange) * chartH;
-        
+
         return `${index === 0 ? 'M' : 'L'}${x} ${y}`;
       })
       .join(' ');
-    
+
     console.log(`📈 createPath: Created path with ${validData.length} points, path length: ${path.length}`);
     return path;
   };
 
   const renderXAxis = (xAxisData, isMeanChart = false) => {
     if (!xAxisData || xAxisData.length === 0) return null;
-    
+
     return (
       <View style={styles.xAxis}>
         {xAxisData.map((label, index) => {
@@ -831,7 +832,7 @@ export default function SummaryScreen({ navigation, route }) {
           } catch (error) {
             console.error('Error formatting label:', error);
           }
-          
+
           return (
             <Text key={index} style={styles.xAxisLabel}>
               {formattedLabel}
@@ -854,7 +855,7 @@ export default function SummaryScreen({ navigation, route }) {
     const chartHeight = scaleHeight(150);
     const currentChart = getChartData();
     const xAxisData = isMeanChart ? currentChart.meanXAxis : currentChart.trendXAxis;
-    
+
     // Debug logging
     console.log(`📊 Rendering ${isMeanChart ? 'Mean' : 'Trend'} Chart for ${activeChart}:`, {
       hasData: !!data,
@@ -863,27 +864,39 @@ export default function SummaryScreen({ navigation, route }) {
       xAxisLength: xAxisData?.length || 0,
       currentChartKeys: Object.keys(currentChart)
     });
-    
-    // Adjust max/min values based on chart type
+
+    // Adjust max/min values based on chart type and data range
     let maxVal = 200;
     let minVal = 0;
-    
+
     if (activeChart === 'bloodGlucose') {
-      maxVal = 200;
+      const values = Array.isArray(data) ? data : (data.glucose || data.values || []);
+      const actualMax = values.length > 0 ? Math.max(...values) : 200;
+      maxVal = Math.max(200, Math.ceil((actualMax + 20) / 20) * 20);
       minVal = 0;
     } else if (activeChart === 'weight') {
-      maxVal = 200;
-      minVal = 100;
-    } else {
+      const values = Array.isArray(data) ? data : (data.weight || data.values || []);
+      const actualMax = values.length > 0 ? Math.max(...values) : 200;
+      const actualMin = values.length > 0 ? Math.min(...values) : 100;
+      maxVal = Math.max(200, Math.ceil((actualMax + 20) / 20) * 20);
+      minVal = Math.max(0, Math.floor((actualMin - 20) / 20) * 20);
+    } else if (activeChart === 'bloodPressure') {
       maxVal = 200;
       minVal = 0;
+    }
+
+    // Generate dynamic Y-axis values for display if they aren't provided by currentChart
+    const dynamicYAxis = [];
+    const step = (maxVal - minVal) / 5;
+    for (let i = 0; i <= 5; i++) {
+      dynamicYAxis.push(Math.round(maxVal - (i * step)));
     }
 
     return (
       <View style={styles.chartWrapper}>
         <View style={styles.chartContainer}>
           <View style={styles.yAxis}>
-            {currentChart.yAxis.map((value, index) => {
+            {dynamicYAxis.map((value, index) => {
               const y = chartHeight - ((value - minVal) / (maxVal - minVal)) * chartHeight;
               return (
                 <Text
@@ -898,7 +911,7 @@ export default function SummaryScreen({ navigation, route }) {
           <View style={styles.chart}>
             <Svg height={chartHeight} width="100%">
               {/* Horizontal grid lines */}
-              {currentChart.yAxis.map((value, i) => {
+              {dynamicYAxis.map((value, i) => {
                 const y = chartHeight - ((value - minVal) / (maxVal - minVal)) * chartHeight;
                 return (
                   <Line
@@ -949,7 +962,7 @@ export default function SummaryScreen({ navigation, route }) {
                   />
                 ) : null
               )}
-              
+
               {activeChart === 'weight' && data && data.weight && (
                 data.weight.length > 0 ? (
                   <Path
@@ -984,15 +997,15 @@ export default function SummaryScreen({ navigation, route }) {
     if (patientId) {
       setIsLoading(true);
       const dateRangeValue = periodToApiValue[selectedPeriod];
-      console.log("🚀 Querying with date range:", selectedPeriod, "API value:", dateRangeValue);
-      
-      if (dateRangeValue === 7 && (!fromDate || !toDate)) {
+      console.log("🚀 Querying with mode:", dateRangeType, "Quick select:", selectedPeriod);
+
+      if (dateRangeType === 'custom' && (!fromDate || !toDate)) {
         console.log("❌ Missing dates for custom range");
         Alert.alert('Error', 'Please select both start and end dates for custom range');
         setIsLoading(false);
         return;
       }
-      
+
       fetchGraphData(patientId, dateRangeValue, dateRangeType, fromDate, toDate);
     }
   };
@@ -1030,7 +1043,7 @@ export default function SummaryScreen({ navigation, route }) {
         {/* Header - Navy Blue Bar */}
         <View style={styles.topDarkSection}>
           <View style={styles.headerRow}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.backButton}
               onPress={() => navigation.goBack()}
             >
@@ -1069,7 +1082,7 @@ export default function SummaryScreen({ navigation, route }) {
               </View>
 
               <View style={styles.dateRow}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.dateInput, dateRangeType !== 'custom' && styles.disabled]}
                   onPress={() => dateRangeType === 'custom' && setShowFromDatePicker(true)}
                 >
@@ -1078,7 +1091,7 @@ export default function SummaryScreen({ navigation, route }) {
                   </Text>
                 </TouchableOpacity>
                 <Text style={styles.to}>to</Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.dateInput, dateRangeType !== 'custom' && styles.disabled]}
                   onPress={() => dateRangeType === 'custom' && setShowToDatePicker(true)}
                 >
@@ -1093,6 +1106,7 @@ export default function SummaryScreen({ navigation, route }) {
                   value={fromDate ? new Date(fromDate) : new Date()}
                   mode="date"
                   display="default"
+                  maximumDate={toDate ? new Date(toDate) : new Date()}
                   onChange={handleFromDateChange}
                 />
               )}
@@ -1102,6 +1116,8 @@ export default function SummaryScreen({ navigation, route }) {
                   value={toDate ? new Date(toDate) : new Date()}
                   mode="date"
                   display="default"
+                  maximumDate={new Date()}
+                  minimumDate={fromDate ? new Date(fromDate) : undefined}
                   onChange={handleToDateChange}
                 />
               )}
@@ -1141,20 +1157,20 @@ export default function SummaryScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: NAVY_BLUE 
+  container: {
+    flex: 1,
+    backgroundColor: NAVY_BLUE
   },
   mainContainer: {
     flex: 1,
     width: '100%',
     backgroundColor: NAVY_BLUE,
   },
-  scroll: { 
-    flex: 1 
+  scroll: {
+    flex: 1
   },
-  content: { 
-    padding: scaleWidth(16) 
+  content: {
+    padding: scaleWidth(16)
   },
 
   // --- Header Styles ---
@@ -1173,7 +1189,7 @@ const styles = StyleSheet.create({
     paddingTop: scaleHeight(10),
   },
   backButton: {
-    padding: 10, 
+    padding: 10,
     justifyContent: 'center',
     alignItems: 'left',
     minHeight: 55,
@@ -1223,22 +1239,22 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  cardTitle: { 
+  cardTitle: {
     fontSize: scaleFont(18),
-    fontWeight: '700', 
-    color: NAVY_BLUE, 
+    fontWeight: '700',
+    color: NAVY_BLUE,
     marginBottom: scaleHeight(12),
   },
 
-  row: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginBottom: scaleHeight(12), 
-    justifyContent: 'space-between' 
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: scaleHeight(12),
+    justifyContent: 'space-between'
   },
-  radio: { 
-    flexDirection: 'row', 
-    alignItems: 'center' 
+  radio: {
+    flexDirection: 'row',
+    alignItems: 'center'
   },
   radioCircle: {
     width: scaleWidth(20),
@@ -1250,11 +1266,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  radioActive: { 
-    backgroundColor: NAVY_BLUE 
+  radioActive: {
+    backgroundColor: NAVY_BLUE
   },
-  radioLabel: { 
-    fontSize: scaleFont(14), 
+  radioLabel: {
+    fontSize: scaleFont(14),
     color: TEXT_LIGHT,
   },
   dropdown: {
@@ -1270,20 +1286,20 @@ const styles = StyleSheet.create({
     borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
   },
-  disabled: { 
-    opacity: 0.5 
+  disabled: {
+    opacity: 0.5
   },
-  dropdownText: { 
-    fontSize: scaleFont(14), 
+  dropdownText: {
+    fontSize: scaleFont(14),
     color: NAVY_BLUE,
     fontWeight: '600',
   },
 
-  dateRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between', 
-    marginBottom: scaleHeight(12) 
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: scaleHeight(12)
   },
   dateInput: {
     flex: 1,
@@ -1298,19 +1314,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: scaleHeight(40),
   },
-  dateText: { 
-    fontSize: scaleFont(14), 
+  dateText: {
+    fontSize: scaleFont(14),
     color: NAVY_BLUE,
     fontWeight: '600',
   },
-  placeholderText: { 
-    fontSize: scaleFont(14), 
-    color: TEXT_LIGHT 
+  placeholderText: {
+    fontSize: scaleFont(14),
+    color: TEXT_LIGHT
   },
-  to: { 
-    fontSize: scaleFont(14), 
-    color: TEXT_LIGHT, 
-    marginHorizontal: scaleWidth(8) 
+  to: {
+    fontSize: scaleFont(14),
+    color: TEXT_LIGHT,
+    marginHorizontal: scaleWidth(8)
   },
 
   queryBtn: {
@@ -1322,48 +1338,48 @@ const styles = StyleSheet.create({
     borderWidth: scaleWidth(1),
     borderColor: NAVY_BLUE,
   },
-  queryBtnText: { 
-    color: WHITE, 
-    fontWeight: '600', 
-    fontSize: scaleFont(15) 
+  queryBtnText: {
+    color: WHITE,
+    fontWeight: '600',
+    fontSize: scaleFont(15)
   },
 
-  chartTitle: { 
-    fontSize: scaleFont(16), 
-    fontWeight: '600', 
-    color: NAVY_BLUE, 
-    marginTop: scaleHeight(24), 
-    marginBottom: scaleHeight(8) 
+  chartTitle: {
+    fontSize: scaleFont(16),
+    fontWeight: '600',
+    color: NAVY_BLUE,
+    marginTop: scaleHeight(24),
+    marginBottom: scaleHeight(8)
   },
-  chartWrapper: { 
-    marginBottom: scaleHeight(16), 
-    backgroundColor: WHITE, 
-    borderRadius: scaleWidth(8), 
-    padding: scaleWidth(16), 
+  chartWrapper: {
+    marginBottom: scaleHeight(16),
+    backgroundColor: WHITE,
+    borderRadius: scaleWidth(8),
+    padding: scaleWidth(16),
     borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
   },
-  chartContainer: { 
-    flexDirection: 'row', 
-    height: scaleHeight(160) 
+  chartContainer: {
+    flexDirection: 'row',
+    height: scaleHeight(160)
   },
-  yAxis: { 
-    width: scaleWidth(45), 
-    position: 'relative' 
+  yAxis: {
+    width: scaleWidth(45),
+    position: 'relative'
   },
-  yAxisLabel: { 
-    fontSize: scaleFont(10), 
-    color: TEXT_LIGHT, 
-    textAlign: 'right', 
+  yAxisLabel: {
+    fontSize: scaleFont(10),
+    color: TEXT_LIGHT,
+    textAlign: 'right',
     paddingRight: scaleWidth(4),
-    height: scaleHeight(16) 
+    height: scaleHeight(16)
   },
-  chart: { 
-    flex: 1, 
-    borderWidth: scaleWidth(1), 
-    borderColor: BORDER_GREY, 
-    borderRadius: scaleWidth(8), 
-    padding: scaleWidth(8), 
+  chart: {
+    flex: 1,
+    borderWidth: scaleWidth(1),
+    borderColor: BORDER_GREY,
+    borderRadius: scaleWidth(8),
+    padding: scaleWidth(8),
     paddingRight: scaleWidth(12)
   },
   xAxis: {
@@ -1373,9 +1389,9 @@ const styles = StyleSheet.create({
     marginLeft: scaleWidth(45),
     paddingRight: scaleWidth(8),
   },
-  xAxisLabel: { 
-    fontSize: scaleFont(10), 
-    color: TEXT_LIGHT 
+  xAxisLabel: {
+    fontSize: scaleFont(10),
+    color: TEXT_LIGHT
   },
   noDataContainer: {
     alignItems: 'center',
@@ -1383,9 +1399,9 @@ const styles = StyleSheet.create({
     paddingVertical: scaleHeight(20),
     paddingHorizontal: scaleWidth(16),
   },
-  noDataText: { 
-    textAlign: 'center', 
-    marginTop: scaleHeight(8), 
+  noDataText: {
+    textAlign: 'center',
+    marginTop: scaleHeight(8),
     color: TEXT_LIGHT,
     fontSize: scaleFont(14),
     fontWeight: '600'
@@ -1397,11 +1413,11 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(12),
   },
 
-  modalOverlay: { 
-    flex: 1, 
-    backgroundColor: 'rgba(0,0,0,0.5)', 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center'
   },
   dropdownMenu: {
     backgroundColor: WHITE,
@@ -1417,14 +1433,14 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  dropdownItem: { 
-    padding: scaleHeight(14), 
-    borderBottomWidth: scaleWidth(1), 
+  dropdownItem: {
+    padding: scaleHeight(14),
+    borderBottomWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
     backgroundColor: WHITE,
   },
-  dropdownItemText: { 
-    fontSize: scaleFont(15), 
+  dropdownItemText: {
+    fontSize: scaleFont(15),
     color: NAVY_BLUE,
     fontWeight: '600',
   },

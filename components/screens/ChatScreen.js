@@ -34,7 +34,7 @@ const LIGHT_GREY = '#F4F7F9';
 
 // Gemini API configuration
 const GEMINI_API_KEY = "AIzaSyB7OwSmWiXMhKQ9d09FAxhGT5HlUsasPPE";
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 const ChatScreen = ({ navigation }) => {
   const [messages, setMessages] = useState([
