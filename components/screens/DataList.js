@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LineChart } from 'react-native-chart-kit';
 import { colors, fonts } from '../../config/globall';
 import apiService from '../../services/apiService';
+import Orientation from 'react-native-orientation-locker';
 
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -33,7 +34,7 @@ const scaleHeight = size => (height / guidelineBaseHeight) * size;
 const scaleFont = size => scaleWidth(size);
 
 /* ──────────────────────  COLORS  ────────────────────── */
-const NAVY_BLUE = '#293d55'; 
+const NAVY_BLUE = '#293d55';
 const WHITE = '#FFFFFF';
 const LIGHT_GREY = '#F4F7F9';
 const BORDER_GREY = '#E0E0E0';
@@ -86,12 +87,13 @@ const DataList = ({ navigation, route }) => {
   const [measurements, setMeasurements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
-    // Changes Added 
-   // Calendar states
+
+  // Changes Added 
+  // Calendar states
   const [showCalendar, setShowCalendar] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState('from'); // 'from' or 'to'
   const [tempDate, setTempDate] = useState(new Date());
+  const [showChartModal, setShowChartModal] = useState(false);
 
 
   /* ───── DATE FILTER LOGIC ───── */
@@ -128,9 +130,9 @@ const DataList = ({ navigation, route }) => {
   const sortData = (data) => {
     const sorted = [...data];
     if (sortBy === 'Date (newest first)') {
-      sorted.sort((a, b) => new Date(b.id) - new Date(a.id));
+      sorted.sort((a, b) => b.timestamp - a.timestamp);
     } else if (sortBy === 'Date (oldest first)') {
-      sorted.sort((a, b) => new Date(a.id) - new Date(b.id));
+      sorted.sort((a, b) => a.timestamp - b.timestamp);
     } else if (sortBy === 'Systolic (high-low)') {
       sorted.sort((a, b) => b.systolic - a.systolic);
     } else if (sortBy === 'Diastolic (high-low)') {
@@ -154,7 +156,7 @@ const DataList = ({ navigation, route }) => {
       // Get practiceId and patientId (patients.id, not user_id)
       let practiceId = null;
       let patientId = null; // This should be patients.id (patients_table_id)
-      
+
       const userData = await AsyncStorage.getItem('user');
       if (userData) {
         const user = JSON.parse(userData);
@@ -176,7 +178,7 @@ const DataList = ({ navigation, route }) => {
           }
         }
       }
-      
+
       // If not found, fetch patient details to get patients.id
       if (!practiceId || !patientId) {
         try {
@@ -209,7 +211,7 @@ const DataList = ({ navigation, route }) => {
           console.log('⚠️ Could not fetch patient details from API:', apiError.message);
         }
       }
-      
+
       if (!practiceId || !patientId) {
         throw new Error('Practice ID or Patient ID missing');
       }
@@ -217,7 +219,7 @@ const DataList = ({ navigation, route }) => {
       console.log('📊 Fetching all records for:', { practiceId, patientId, dataType });
 
       const { start, end } = getDateRange();
-      
+
       // Format dates for API (YYYY-MM-DD)
       const formatDateForAPI = (date) => {
         const year = date.getFullYear();
@@ -225,11 +227,11 @@ const DataList = ({ navigation, route }) => {
         const day = String(date.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
       };
-      
+
       // For "All" period, don't send date filters to get all records
       const fromDateStr = selectedPeriod === 'All' ? null : formatDateForAPI(start);
       const toDateStr = selectedPeriod === 'All' ? null : formatDateForAPI(end);
-      
+
       const rawList = [];
       let result = null;
 
@@ -239,23 +241,24 @@ const DataList = ({ navigation, route }) => {
           fromDate: fromDateStr,
           toDate: toDateStr,
         });
-        
+
         console.log('✅ Blood Pressure API Response:', result);
-        
+
         // Backend returns data directly in result.data array (not nested in measurements)
-        const measurements = Array.isArray(result.data) 
-          ? result.data 
+        const measurements = Array.isArray(result.data)
+          ? result.data
           : (result.data?.measurements ? (Array.isArray(result.data.measurements) ? result.data.measurements : [result.data.measurements]) : []);
-        
+
         console.log('📋 Blood Pressure measurements count:', measurements.length);
         console.log('📋 Sample BP measurement:', measurements[0]);
-        
+
         measurements.forEach((bp) => {
           const date = new Date(bp.measure_new_date_time || bp.measure_date_time || bp.created_at);
           // Only filter by date if date range is specified
           if (!fromDateStr || !toDateStr || (date >= start && date <= end)) {
             rawList.push({
               id: bp.id || bp.measure_new_date_time || Date.now(),
+              timestamp: date.getTime(),
               date: formatDate(bp.measure_new_date_time || bp.measure_date_time || bp.created_at),
               time: formatTime(bp.measure_new_date_time || bp.measure_date_time || bp.created_at),
               systolic: parseFloat(bp.systolic_pressure || bp.systolic || 0),
@@ -269,23 +272,24 @@ const DataList = ({ navigation, route }) => {
           fromDate: fromDateStr,
           toDate: toDateStr,
         });
-        
+
         console.log('✅ Blood Glucose API Response:', result);
-        
+
         // Backend returns data directly in result.data array (not nested in measurements)
-        const measurements = Array.isArray(result.data) 
-          ? result.data 
+        const measurements = Array.isArray(result.data)
+          ? result.data
           : (result.data?.measurements ? (Array.isArray(result.data.measurements) ? result.data.measurements : [result.data.measurements]) : []);
-        
+
         console.log('📋 Blood Glucose measurements count:', measurements.length);
         console.log('📋 Sample BG measurement:', measurements[0]);
-        
+
         measurements.forEach((bg) => {
           const date = new Date(bg.measure_new_date_time || bg.measure_date_time || bg.created_at);
           // Only filter by date if date range is specified
           if (!fromDateStr || !toDateStr || (date >= start && date <= end)) {
             rawList.push({
               id: bg.id || bg.measure_new_date_time || Date.now(),
+              timestamp: date.getTime(),
               date: formatDate(bg.measure_new_date_time || bg.measure_date_time || bg.created_at),
               time: formatTime(bg.measure_new_date_time || bg.measure_date_time || bg.created_at),
               glucose: parseFloat(bg.blood_glucose_value_1 || bg.blood_glucose_value || bg.value || 0),
@@ -297,17 +301,17 @@ const DataList = ({ navigation, route }) => {
           fromDate: fromDateStr,
           toDate: toDateStr,
         });
-        
+
         console.log('✅ Weight API Response:', result);
-        
+
         // Backend returns data directly in result.data array (not nested in measurements)
-        const measurements = Array.isArray(result.data) 
-          ? result.data 
+        const measurements = Array.isArray(result.data)
+          ? result.data
           : (result.data?.measurements ? (Array.isArray(result.data.measurements) ? result.data.measurements : [result.data.measurements]) : []);
-        
+
         console.log('📋 Weight measurements count:', measurements.length);
         console.log('📋 Sample Weight measurement:', measurements[0]);
-        
+
         measurements.forEach((w) => {
           const date = new Date(w.measure_new_date_time || w.measure_date_time || w.created_at);
           // Only filter by date if date range is specified
@@ -319,6 +323,7 @@ const DataList = ({ navigation, route }) => {
             }
             rawList.push({
               id: w.id || w.measure_new_date_time || Date.now(),
+              timestamp: date.getTime(),
               date: formatDate(w.measure_new_date_time || w.measure_date_time || w.created_at),
               time: formatTime(w.measure_new_date_time || w.measure_date_time || w.created_at),
               weight: value,
@@ -370,6 +375,50 @@ const DataList = ({ navigation, route }) => {
     return new Date();
   };
 
+  const getEffectivePeriod = () => {
+    if (selectedPeriod !== 'Custom range') return selectedPeriod;
+    if (!fromDate || !toDate) return 'All';
+    try {
+      const start = parseDate(fromDate);
+      const end = parseDate(toDate);
+      const diffDays = Math.ceil(Math.abs(end - start) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 8) return 'Last 7 days';
+      if (diffDays <= 16) return 'Last 2 weeks';
+      if (diffDays <= 45) return 'Last month';
+      if (diffDays <= 110) return 'Last 3 months';
+      if (diffDays <= 200) return 'Last 6 months';
+      if (diffDays <= 380) return 'Last year';
+      return 'All';
+    } catch (e) {
+      return 'All';
+    }
+  };
+
+  const getFormattedLabel = (label, period) => {
+    try {
+      // DataList dates are usually DD/MM/YY via formatDate helper
+      const parts = label.split('/');
+      const date = new Date(2000 + parseInt(parts[2]), parts[0] - 1, parts[1]);
+
+      if (date && !isNaN(date.getTime())) {
+        const day = date.getDate();
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const month = monthNames[date.getMonth()];
+
+        if (period === 'Last year' || period === 'All' || period === 'Last 6 months') {
+          return month;
+        } else if (period === 'Last month' || period === 'Last 3 months') {
+          return `${day} ${month}`;
+        } else {
+          return `${day}/${date.getMonth() + 1}`;
+        }
+      }
+    } catch (e) {
+      return label;
+    }
+    return label;
+  };
+
   const getTitle = () => ({
     bloodPressure: 'Blood Pressure',
     bloodGlucose: 'Blood Glucose',
@@ -377,22 +426,43 @@ const DataList = ({ navigation, route }) => {
   })[dataType] || 'Data';
 
   /* ───── CHART DATA ───── */
-  const chartData = {
-    labels: measurements.map(m => m.date.split('/')[1]),
-    datasets:
-      dataType === 'bloodPressure'
-        ? [
-            { data: measurements.map(m => m.systolic), strokeWidth: 3, color: () => NAVY_BLUE },
-            { data: measurements.map(m => m.diastolic), strokeWidth: 3, color: () => '#EF4444' },
+  const getChartDataForDisplay = (limitToFive = false) => {
+    if (measurements.length === 0) return { labels: [], datasets: [] };
+
+    const dataToUse = limitToFive ? measurements.slice(-5) : measurements;
+    const period = getEffectivePeriod();
+    let targetCount = limitToFive ? 5 : 10;
+
+    const step = Math.max(1, Math.ceil(dataToUse.length / targetCount));
+
+    const labels = dataToUse.map((m, index) => {
+      // Only show labels at specific intervals to avoid congestion
+      if (index % step === 0 || index === dataToUse.length - 1) {
+        return getFormattedLabel(m.date, period);
+      }
+      return "";
+    });
+
+    return {
+      labels: labels,
+      datasets:
+        dataType === 'bloodPressure'
+          ? [
+            { data: dataToUse.map(m => m.systolic), strokeWidth: 3, color: () => NAVY_BLUE },
+            { data: dataToUse.map(m => m.diastolic), strokeWidth: 3, color: () => '#EF4444' },
           ]
-        : [
+          : [
             {
-              data: measurements.map(m => dataType === 'bloodGlucose' ? m.glucose : m.weight),
+              data: dataToUse.map(m => dataType === 'bloodGlucose' ? m.glucose : m.weight),
               color: () => NAVY_BLUE,
               strokeWidth: 3,
             },
           ],
+    };
   };
+
+  const chartData = getChartDataForDisplay(true); // Inline chart limited to 5
+  const fullChartData = getChartDataForDisplay(false); // Full chart for modal
 
   const chartConfig = {
     backgroundGradientFrom: WHITE,
@@ -404,7 +474,7 @@ const DataList = ({ navigation, route }) => {
     propsForLabels: { fontSize: 10 },
   };
 
-   /* ───── Add Changes ───── */
+  /* ───── Add Changes ───── */
   /* ───── CALENDAR HANDLER ───── */
   const handleDateSelect = (selectedDate) => {
     if (selectedDate) {
@@ -413,7 +483,7 @@ const DataList = ({ navigation, route }) => {
         day: '2-digit',
         year: 'numeric'
       });
-      
+
       if (showDatePicker === 'from') {
         setFromDate(formattedDate);
       } else {
@@ -434,6 +504,16 @@ const DataList = ({ navigation, route }) => {
     setShowCalendar(true);
   };
 
+  const handleOpenChartModal = () => {
+    Orientation.lockToLandscape();
+    setShowChartModal(true);
+  };
+
+  const handleCloseChartModal = () => {
+    Orientation.lockToPortrait();
+    setShowChartModal(false);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       {/* <StatusBar backgroundColor={NAVY_BLUE} barStyle="light-content" /> */}
@@ -444,7 +524,7 @@ const DataList = ({ navigation, route }) => {
         {/* Header - Navy Blue Bar */}
         <View style={styles.topDarkSection}>
           <View style={styles.headerRow}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.backButton}
               onPress={() => navigation.goBack()}
             >
@@ -522,9 +602,9 @@ const DataList = ({ navigation, route }) => {
                     </Text>
                   </TouchableOpacity>
                 </View>
-                
+
                 <Text style={styles.to}>to</Text>
-                
+
                 {/* To Date with Calendar */}
                 <View style={styles.dateInputContainer}>
                   <TouchableOpacity
@@ -544,7 +624,7 @@ const DataList = ({ navigation, route }) => {
                   </TouchableOpacity>
                 </View>
               </View>
-           
+
 
               <View style={styles.row}>
                 <Text style={styles.sortLabel}>Sort Data by</Text>
@@ -562,28 +642,39 @@ const DataList = ({ navigation, route }) => {
             {measurements.length > 0 && (
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Trend</Text>
-                <LineChart
-                  data={chartData}
-                  width={width - 60}
-                  height={240}
-                  chartConfig={chartConfig}
-                  bezier
-                  style={styles.chart}
-                  withHorizontalLines={true}
-                  withVerticalLines={false}
-                  fromZero={false}
-                />
-                {dataType === 'bloodPressure' && (
-                  <View style={styles.legend}>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: NAVY_BLUE }]} />
-                      <Text style={styles.legendText}>Systolic</Text>
-                    </View>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
-                      <Text style={styles.legendText}>Diastolic</Text>
-                    </View>
-                  </View>
+                {measurements.length <= 5 ? (
+                  <>
+                    <LineChart
+                      data={chartData}
+                      width={width - 50}
+                      height={180}
+                      chartConfig={chartConfig}
+                      bezier
+                      style={styles.chart}
+                      withHorizontalLines={true}
+                      withVerticalLines={false}
+                      fromZero={false}
+                    />
+                    {dataType === 'bloodPressure' && (
+                      <View style={styles.legend}>
+                        <View style={styles.legendItem}>
+                          <View style={[styles.legendDot, { backgroundColor: NAVY_BLUE }]} />
+                          <Text style={styles.legendText}>Systolic</Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                          <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
+                          <Text style={styles.legendText}>Diastolic</Text>
+                        </View>
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.viewChartButton}
+                    onPress={handleOpenChartModal}
+                  >
+                    <Text style={styles.viewChartButtonText}>📊 View Full Chart ({measurements.length} readings)</Text>
+                  </TouchableOpacity>
                 )}
               </View>
             )}
@@ -672,7 +763,7 @@ const DataList = ({ navigation, route }) => {
         animationType="fade"
         onRequestClose={() => setShowCalendar(false)}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={{
             flex: 1,
             backgroundColor: 'rgba(0,0,0,0.5)',
@@ -697,6 +788,62 @@ const DataList = ({ navigation, route }) => {
             />
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Chart Modal */}
+      <Modal
+        transparent={false}
+        visible={showChartModal}
+        animationType="slide"
+        onRequestClose={handleCloseChartModal}
+      >
+        <SafeAreaView style={styles.chartModalContainer}>
+          <View style={styles.chartModalHeader}>
+            <Text style={styles.chartModalTitle}>{getTitle()} - Trend Chart</Text>
+            <TouchableOpacity
+              style={styles.chartModalCloseButton}
+              onPress={handleCloseChartModal}
+            >
+              <Text style={styles.chartModalCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            horizontal
+            style={styles.chartModalScroll}
+            contentContainerStyle={styles.chartModalContent}
+            showsHorizontalScrollIndicator={true}
+          >
+            <View style={styles.chartModalChartContainer}>
+              <LineChart
+                data={fullChartData}
+                width={Math.max(width, measurements.length * 50)}
+                height={height * 0.5}
+                chartConfig={{
+                  ...chartConfig,
+                  propsForLabels: { fontSize: 12 },
+                }}
+                bezier
+                style={styles.chartModalChart}
+                withHorizontalLines={true}
+                withVerticalLines={false}
+                fromZero={false}
+              />
+              {dataType === 'bloodPressure' && (
+                <View style={styles.legend}>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: NAVY_BLUE }]} />
+                    <Text style={styles.legendText}>Systolic</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
+                    <Text style={styles.legendText}>Diastolic</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          </ScrollView>
+        </SafeAreaView>
       </Modal>
 
 
@@ -732,7 +879,7 @@ const styles = StyleSheet.create({
     paddingTop: scaleHeight(10),
   },
   backButton: {
-    padding: 10, 
+    padding: 10,
     justifyContent: 'center',
     alignItems: 'left',
     minHeight: 55,
@@ -774,7 +921,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: WHITE,
     borderRadius: scaleWidth(10),
-    padding: scaleWidth(16),
+    padding: scaleWidth(2),
     marginBottom: scaleHeight(16),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -782,27 +929,27 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  cardTitle: { 
+  cardTitle: {
     fontSize: scaleFont(18),
-    fontWeight: '700', 
-    color: NAVY_BLUE, 
+    fontWeight: '700',
+    color: NAVY_BLUE,
     marginBottom: scaleHeight(12),
   },
-  subtitle: { 
-    fontSize: scaleFont(14), 
-    color: TEXT_LIGHT, 
-    marginBottom: scaleHeight(12) 
+  subtitle: {
+    fontSize: scaleFont(14),
+    color: TEXT_LIGHT,
+    marginBottom: scaleHeight(12)
   },
 
-  row: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginBottom: scaleHeight(12), 
-    justifyContent: 'space-between' 
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: scaleHeight(12),
+    justifyContent: 'space-between'
   },
-  radio: { 
-    flexDirection: 'row', 
-    alignItems: 'center' 
+  radio: {
+    flexDirection: 'row',
+    alignItems: 'center'
   },
   radioCircle: {
     width: scaleWidth(20),
@@ -814,12 +961,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  radioActive: { 
-    backgroundColor: NAVY_BLUE 
+  radioActive: {
+    backgroundColor: NAVY_BLUE
   },
-  radioLabel: { 
-    fontSize: scaleFont(14), 
-    color: TEXT_LIGHT 
+  radioLabel: {
+    fontSize: scaleFont(14),
+    color: TEXT_LIGHT
   },
   dropdown: {
     flex: 1,
@@ -834,20 +981,20 @@ const styles = StyleSheet.create({
     borderWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
   },
-  disabled: { 
-    opacity: 0.5 
+  disabled: {
+    opacity: 0.5
   },
-  dropdownText: { 
-    fontSize: scaleFont(14), 
+  dropdownText: {
+    fontSize: scaleFont(14),
     color: NAVY_BLUE,
     fontWeight: '600',
   },
 
-  dateRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between', 
-    marginBottom: scaleHeight(12) 
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: scaleHeight(12)
   },
   dateInputContainer: {
     flex: 1,
@@ -866,10 +1013,10 @@ const styles = StyleSheet.create({
     color: NAVY_BLUE,
     fontWeight: '600',
   },
-  to: { 
-    fontSize: scaleFont(14), 
-    color: TEXT_LIGHT, 
-    marginHorizontal: scaleWidth(8) 
+  to: {
+    fontSize: scaleFont(14),
+    color: TEXT_LIGHT,
+    marginHorizontal: scaleWidth(8)
   },
 
   // Calendar Styles
@@ -944,10 +1091,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  sortLabel: { 
-    fontSize: scaleFont(14), 
-    color: TEXT_LIGHT, 
-    width: scaleWidth(100) 
+  sortLabel: {
+    fontSize: scaleFont(14),
+    color: TEXT_LIGHT,
+    width: scaleWidth(100)
   },
   queryBtn: {
     backgroundColor: NAVY_BLUE,
@@ -958,107 +1105,107 @@ const styles = StyleSheet.create({
     borderWidth: scaleWidth(1),
     borderColor: NAVY_BLUE,
   },
-  queryBtnText: { 
-    color: WHITE, 
-    fontWeight: '600', 
-    fontSize: scaleFont(15) 
+  queryBtnText: {
+    color: WHITE,
+    fontWeight: '600',
+    fontSize: scaleFont(15)
   },
 
-  chart: { 
-    borderRadius: scaleWidth(12), 
-    marginVertical: scaleHeight(8) 
+  chart: {
+    borderRadius: scaleWidth(12),
+    marginVertical: scaleHeight(8)
   },
-  legend: { 
-    flexDirection: 'row', 
-    justifyContent: 'center', 
-    marginTop: scaleHeight(8) 
+  legend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: scaleHeight(8)
   },
-  legendItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginHorizontal: scaleWidth(12) 
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: scaleWidth(12)
   },
-  legendDot: { 
-    width: scaleWidth(10), 
-    height: scaleWidth(10), 
-    borderRadius: scaleWidth(5), 
-    marginRight: scaleWidth(6) 
+  legendDot: {
+    width: scaleWidth(10),
+    height: scaleWidth(10),
+    borderRadius: scaleWidth(5),
+    marginRight: scaleWidth(6)
   },
-  legendText: { 
-    fontSize: scaleFont(12), 
-    color: TEXT_LIGHT 
+  legendText: {
+    fontSize: scaleFont(12),
+    color: TEXT_LIGHT
   },
 
-  table: { 
-    borderWidth: scaleWidth(1), 
-    borderColor: BORDER_GREY, 
-    borderRadius: scaleWidth(12), 
+  table: {
+    borderWidth: scaleWidth(1),
+    borderColor: BORDER_GREY,
+    borderRadius: scaleWidth(12),
     overflow: 'hidden',
     backgroundColor: WHITE,
   },
-  tableHeader: { 
-    flexDirection: 'row', 
-    backgroundColor: LIGHT_GREY, 
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: LIGHT_GREY,
     paddingVertical: scaleHeight(10),
     borderBottomWidth: scaleWidth(1),
     borderBottomColor: BORDER_GREY,
   },
-  tableRow: { 
-    flexDirection: 'row', 
-    paddingVertical: scaleHeight(12), 
-    borderBottomWidth: scaleWidth(1), 
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: scaleHeight(12),
+    borderBottomWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
     backgroundColor: WHITE,
   },
-  th: { 
-    fontWeight: '600', 
-    fontSize: scaleFont(12), 
-    color: NAVY_BLUE 
+  th: {
+    fontWeight: '600',
+    fontSize: scaleFont(12),
+    color: NAVY_BLUE
   },
-  td: { 
-    fontSize: scaleFont(13), 
+  td: {
+    fontSize: scaleFont(13),
     color: NAVY_BLUE,
     fontWeight: '600',
   },
-  colDate: { 
-    width: '22%', 
-    paddingLeft: scaleWidth(12) 
+  colDate: {
+    width: '22%',
+    paddingLeft: scaleWidth(12)
   },
-  colTime: { 
-    width: '22%', 
-    textAlign: 'center' 
+  colTime: {
+    width: '22%',
+    textAlign: 'center'
   },
-  colValue: { 
-    width: '18%', 
-    textAlign: 'center' 
+  colValue: {
+    width: '18%',
+    textAlign: 'center'
   },
-  colUnit: { 
-    width: '18%', 
-    textAlign: 'center' 
+  colUnit: {
+    width: '18%',
+    textAlign: 'center'
   },
-  danger: { 
-    color: '#EF4444', 
-    fontWeight: '600' 
-  },
-
-  emptyText: { 
-    textAlign: 'center', 
-    color: TEXT_LIGHT, 
-    fontSize: scaleFont(15), 
-    marginVertical: scaleHeight(20) 
-  },
-  errorText: { 
-    textAlign: 'center', 
-    color: '#EF4444', 
-    fontSize: scaleFont(14), 
-    marginVertical: scaleHeight(20) 
+  danger: {
+    color: '#EF4444',
+    fontWeight: '600'
   },
 
-  modalOverlay: { 
-    flex: 1, 
-    backgroundColor: 'rgba(0,0,0,0.5)', 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  emptyText: {
+    textAlign: 'center',
+    color: TEXT_LIGHT,
+    fontSize: scaleFont(15),
+    marginVertical: scaleHeight(20)
+  },
+  errorText: {
+    textAlign: 'center',
+    color: '#EF4444',
+    fontSize: scaleFont(14),
+    marginVertical: scaleHeight(20)
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center'
   },
   dropdownMenu: {
     backgroundColor: WHITE,
@@ -1074,16 +1221,75 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  dropdownItem: { 
-    padding: scaleHeight(14), 
-    borderBottomWidth: scaleWidth(1), 
+  dropdownItem: {
+    padding: scaleHeight(14),
+    borderBottomWidth: scaleWidth(1),
     borderColor: BORDER_GREY,
     backgroundColor: WHITE,
   },
-  dropdownItemText: { 
-    fontSize: scaleFont(15), 
+  dropdownItemText: {
+    fontSize: scaleFont(15),
     color: NAVY_BLUE,
     fontWeight: '600',
+  },
+
+  // View Chart Button
+  viewChartButton: {
+    backgroundColor: NAVY_BLUE,
+    paddingVertical: scaleHeight(16),
+    paddingHorizontal: scaleWidth(20),
+    borderRadius: scaleWidth(12),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: scaleHeight(10),
+  },
+  viewChartButtonText: {
+    color: WHITE,
+    fontSize: scaleFont(16),
+    fontWeight: '600',
+  },
+
+  // Chart Modal Styles
+  chartModalContainer: {
+    flex: 1,
+    backgroundColor: WHITE,
+  },
+  chartModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: scaleWidth(20),
+    paddingVertical: scaleHeight(15),
+    backgroundColor: NAVY_BLUE,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER_GREY,
+  },
+  chartModalTitle: {
+    fontSize: scaleFont(18),
+    fontWeight: '700',
+    color: WHITE,
+    flex: 1,
+  },
+  chartModalCloseButton: {
+    padding: scaleWidth(8),
+    marginLeft: scaleWidth(10),
+  },
+  chartModalCloseText: {
+    fontSize: scaleFont(24),
+    color: WHITE,
+    fontWeight: '300',
+  },
+  chartModalScroll: {
+    flex: 1,
+  },
+  chartModalContent: {
+    padding: scaleWidth(20),
+  },
+  chartModalChartContainer: {
+    backgroundColor: WHITE,
+  },
+  chartModalChart: {
+    borderRadius: scaleWidth(8),
   },
 });
 

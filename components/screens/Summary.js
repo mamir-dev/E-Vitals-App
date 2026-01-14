@@ -588,17 +588,73 @@ export default function SummaryScreen({ navigation, route }) {
     return values.reverse();
   };
 
+  const getEffectivePeriod = () => {
+    if (dateRangeType === 'range') return selectedPeriod;
+    if (!fromDate || !toDate) return 'All';
+    try {
+      const start = new Date(fromDate);
+      const end = new Date(toDate);
+      const diffDays = Math.ceil(Math.abs(end - start) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 8) return 'Last 7 days';
+      if (diffDays <= 16) return 'Last 2 weeks';
+      if (diffDays <= 45) return 'Last month';
+      if (diffDays <= 110) return 'Last 90 Days';
+      if (diffDays <= 380) return 'Last year';
+      return 'All';
+    } catch (e) {
+      return 'All';
+    }
+  };
+
   // Helper function to get trend X-axis
-  const getTrendXAxis = (dates) => {
-    if (!dates || !Array.isArray(dates)) return [];
-    const step = Math.max(1, Math.ceil(dates.length / 7));
-    return dates.filter((_, index) => index % step === 0 || index === dates.length - 1);
+  const getTrendXAxis = (dates, period) => {
+    if (!dates || !Array.isArray(dates) || dates.length === 0) return [];
+
+    let targetCount = 6; // Default to ~6 labels
+    if (period === 'Last 7 days') targetCount = 7;
+    if (period === 'Last month') targetCount = 5;
+    if (period === 'Last year' || period === 'All' || period === 'Last 90 Days') targetCount = 6;
+
+    const step = Math.max(1, Math.ceil(dates.length / targetCount));
+    const result = [];
+
+    for (let i = 0; i < dates.length; i += step) {
+      result.push(dates[i]);
+    }
+
+    // Ensure last date is always included if not already
+    if (dates.length > 0 && result[result.length - 1] !== dates[dates.length - 1]) {
+      // If we have many items, replace the last one if it's too close, or just add it
+      if (result.length > 1 && (dates.length - 1 - dates.indexOf(result[result.length - 1])) < step / 2) {
+        result[result.length - 1] = dates[dates.length - 1];
+      } else {
+        result.push(dates[dates.length - 1]);
+      }
+    }
+
+    return result;
   };
 
   // Helper function to get mean X-axis
   const getMeanXAxis = (xAxisData) => {
     if (!xAxisData || !Array.isArray(xAxisData)) return [];
-    return xAxisData.map(item => item.hAxis || '');
+
+    const labels = xAxisData.map(item => item.hAxis || '');
+    if (labels.length <= 6) return labels;
+
+    // Filter to ~6 labels if there are too many
+    const step = Math.ceil(labels.length / 6);
+    const result = [];
+    for (let i = 0; i < labels.length; i += step) {
+      result.push(labels[i]);
+    }
+
+    // Ensure the last label is included
+    if (labels.length > 0 && result[result.length - 1] !== labels[labels.length - 1]) {
+      result.push(labels[labels.length - 1]);
+    }
+
+    return result;
   };
 
   const getChartData = () => {
@@ -696,7 +752,7 @@ export default function SummaryScreen({ navigation, route }) {
         mean: meanData,
         colors: { primary: NAVY_BLUE, secondary: '#EF4444' },
         yAxis: yAxisValues,
-        trendXAxis: getTrendXAxis(trendDates),
+        trendXAxis: getTrendXAxis(trendDates, getEffectivePeriod()),
         meanXAxis: getMeanXAxis(apiData.data?.xAxisData),
         allTrendDates: trendDates
       };
@@ -726,7 +782,7 @@ export default function SummaryScreen({ navigation, route }) {
         mean: meanData,
         colors: { primary: NAVY_BLUE },
         yAxis: [200, 150, 100, 50, 0],
-        trendXAxis: getTrendXAxis(trendDates),
+        trendXAxis: getTrendXAxis(trendDates, getEffectivePeriod()),
         meanXAxis: getMeanXAxis(apiData.data?.xAxisData),
         allTrendDates: trendDates
       };
@@ -756,7 +812,7 @@ export default function SummaryScreen({ navigation, route }) {
         mean: meanData,
         colors: { primary: NAVY_BLUE },
         yAxis: [200, 175, 150, 125, 100],
-        trendXAxis: getTrendXAxis(trendDates),
+        trendXAxis: getTrendXAxis(trendDates, getEffectivePeriod()),
         meanXAxis: getMeanXAxis(apiData.data?.xAxisData),
         allTrendDates: trendDates
       };
@@ -816,25 +872,50 @@ export default function SummaryScreen({ navigation, route }) {
   const renderXAxis = (xAxisData, isMeanChart = false) => {
     if (!xAxisData || xAxisData.length === 0) return null;
 
+    const effectivePeriod = getEffectivePeriod();
+
     return (
       <View style={styles.xAxis}>
         {xAxisData.map((label, index) => {
           let formattedLabel = label;
           try {
-            if (!isMeanChart && label.includes('/')) {
-              const dateParts = label.split('/');
-              formattedLabel = `${dateParts[1]}/${dateParts[2]}`;
+            // Check if it's a weekly range format
+            let dateToFormat = label;
+            if (label.includes('~')) {
+              dateToFormat = label.split('~')[0].trim();
             }
-            else if (isMeanChart && label.includes('~')) {
-              const timeParts = label.split('~');
-              formattedLabel = timeParts[0].trim();
+
+            // Standardize format to recognizable date
+            let date;
+            if (dateToFormat.includes('-')) {
+              date = new Date(dateToFormat);
+            } else if (dateToFormat.includes('/')) {
+              const parts = dateToFormat.split('/');
+              date = new Date(parts[2], parts[0] - 1, parts[1]);
+            } else {
+              // Try parsing DD MMM formats (like "01 Jan")
+              date = new Date(dateToFormat + " " + new Date().getFullYear());
+            }
+
+            if (date && !isNaN(date.getTime())) {
+              const day = date.getDate();
+              const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+              const month = monthNames[date.getMonth()];
+
+              if (effectivePeriod === 'Last year' || effectivePeriod === 'All') {
+                formattedLabel = month;
+              } else if (effectivePeriod === 'Last month' || effectivePeriod === 'Last 90 Days') {
+                formattedLabel = `${day} ${month}`;
+              } else {
+                formattedLabel = `${day}/${date.getMonth() + 1}`;
+              }
             }
           } catch (error) {
             console.error('Error formatting label:', error);
           }
 
           return (
-            <Text key={index} style={styles.xAxisLabel}>
+            <Text key={index} style={styles.xAxisLabel} numberOfLines={1}>
               {formattedLabel}
             </Text>
           );
