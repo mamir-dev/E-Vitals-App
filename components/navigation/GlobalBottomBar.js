@@ -29,6 +29,7 @@ const scaleFont = (size) => scaleWidth(size);
 // --- Screen Imports ---
 import Home from '../screens/Home';
 import Appointment from '../screens/Appointment';
+import AIModulesScreen from '../screens/AIModulesScreen';
 import ChatScreen from '../screens/ChatScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -91,7 +92,7 @@ export default function GlobalBottomBar({ navigation }) {
       <Tab.Screen name="Profile" component={ProfileScreen} />
       {/* <Tab.Screen name="Appointment" component={Appointment} /> */}
       <Tab.Screen name="Home" component={Home} />
-      <Tab.Screen name="Agent" component={ChatScreen} />
+      <Tab.Screen name="Agent" component={AIModulesScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );

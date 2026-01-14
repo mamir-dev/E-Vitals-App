@@ -34,14 +34,14 @@ const LIGHT_GREY = '#F4F7F9';
 
 // Gemini API configuration
 const GEMINI_API_KEY = "AIzaSyB7OwSmWiXMhKQ9d09FAxhGT5HlUsasPPE";
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 const ChatScreen = ({ navigation }) => {
   const [messages, setMessages] = useState([
-    { 
-      id: "1", 
-      text: "Hello! I'm Dr. Smith, your AI medical assistant. I can analyze your blood pressure, glucose, and weight data to provide health insights. How can I help you today?", 
-      sender: "doctor" 
+    {
+      id: "1",
+      text: "Hello! I'm Dr. Smith, your AI medical assistant. I can analyze your blood pressure, glucose, and weight data to provide health insights. How can I help you today?",
+      sender: "doctor"
     }
   ]);
 
@@ -110,12 +110,12 @@ const ChatScreen = ({ navigation }) => {
       const w = measurements.weight;
       let weightValue = parseFloat(w.value || w.weight_value || w.weight || null);
       const originalUnit = (w.unit || w.measurement_unit || 'kg').toLowerCase();
-      
+
       // Convert to kg if the value is in pounds
       if (originalUnit === 'lb' && weightValue) {
         weightValue = (weightValue * 0.453592).toFixed(1); // Convert pounds to kg
       }
-      
+
       processed.measurements.weight = {
         value: weightValue,
         date: w.measure_new_date_time || null,
@@ -129,10 +129,10 @@ const ChatScreen = ({ navigation }) => {
   // System prompt for the AI doctor with concise responses
   const getSystemPrompt = (patientData) => {
     let patientContext = "";
-    
+
     if (patientData && patientData.measurements) {
       const { bloodPressure, bloodGlucose, weight } = patientData.measurements;
-      
+
       patientContext = `
 CURRENT PATIENT DATA FOR ANALYSIS:
 
@@ -162,11 +162,6 @@ RESPONSE REQUIREMENTS:
     }
 
     return `You are Dr. Smith, an AI medical assistant. Analyze patient data and provide brief, actionable insights.
-
-CRITICAL: 
-- Weight values are in KILOGRAMS (kg)
-- Keep responses SHORT and CONCISE unless user asks for detailed explanation
-- Focus on key findings and immediate recommendations
 
 ${patientContext}
 
@@ -210,7 +205,7 @@ DISCLAIMER: Always include "Consult healthcare professional for medical advice" 
       }
 
       const data = await response.json();
-      
+
       if (data.candidates && data.candidates[0].content.parts[0].text) {
         return data.candidates[0].content.parts[0].text.trim();
       } else {
@@ -225,7 +220,7 @@ DISCLAIMER: Always include "Consult healthcare professional for medical advice" 
   // Add new message and get AI response
   const sendMessage = async () => {
     if (input.trim().length === 0) return;
-    
+
     const userMessage = input.trim();
     setInput("");
     setIsLoading(true);
@@ -241,7 +236,7 @@ DISCLAIMER: Always include "Consult healthcare professional for medical advice" 
     try {
       // Get AI response with patient data analysis
       const aiResponse = await callGeminiAPI(userMessage);
-      
+
       // Add AI response
       const newDoctorMessage = {
         id: (Date.now() + 1).toString(),
@@ -251,7 +246,7 @@ DISCLAIMER: Always include "Consult healthcare professional for medical advice" 
       setMessages(prev => [...prev, newDoctorMessage]);
     } catch (error) {
       console.error("Error in sendMessage:", error);
-      
+
       // Add error message
       const errorMessage = {
         id: (Date.now() + 1).toString(),
@@ -264,7 +259,6 @@ DISCLAIMER: Always include "Consult healthcare professional for medical advice" 
     }
   };
 
-  // Quick analysis buttons with more specific prompts
   const quickAnalysisOptions = [
     { id: 1, text: "BP status?", prompt: "Briefly analyze my blood pressure status" },
     { id: 2, text: "Glucose check", prompt: "Quick glucose assessment" },
@@ -316,14 +310,14 @@ DISCLAIMER: Always include "Consult healthcare professional for medical advice" 
     <View style={styles.fullScreenContainer}>
       {/* Status Bar */}
       <StatusBar barStyle="light-content" backgroundColor={NAVY_BLUE} />
-      
+
       <View style={styles.mainContainer}>
         {/* Header - Navy Blue Bar (Same as ProfileScreen) */}
         <View style={styles.topDarkSection}>
           <View style={styles.headerRow}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.backButton}
-              onPress={() => navigation.navigate('Home')}
+              onPress={() => navigation.goBack()}
             >
               <Text style={styles.backButtonText}>‹</Text>
             </TouchableOpacity>
@@ -366,28 +360,20 @@ DISCLAIMER: Always include "Consult healthcare professional for medical advice" 
 
             {/* Input */}
             <View style={styles.inputContainer}>
-              {/* <TextInput
+              <TextInput
                 style={styles.input}
                 placeholder="Ask about your health data..."
+                placeholderTextColor="#999"
                 value={input}
                 onChangeText={setInput}
                 editable={!isLoading}
                 multiline
-              /> */}
-              <TextInput
-                  style={styles.input}
-                  placeholder="Ask about your health data..."
-                  placeholderTextColor="#999"
-                  value={input}
-                  onChangeText={setInput}
-                  editable={!isLoading}
-                  multiline
               />
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[
-                  styles.sendButton, 
+                  styles.sendButton,
                   isLoading && { opacity: 0.6 }
-                ]} 
+                ]}
                 onPress={sendMessage}
                 disabled={isLoading}
               >
@@ -435,11 +421,11 @@ const styles = StyleSheet.create({
     paddingTop: scaleHeight(20),
   },
   backButton: {
-  padding: 6, 
-  justifyContent: 'center',
-  alignItems: 'left',
-  minHeight: 55, // Removed scaleHeight
-  minWidth: 55, // Removed scaleWidth
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'left',
+    minHeight: 55,
+    minWidth: 55,
   },
   backButtonText: {
     fontSize: scaleFont(35),
@@ -447,18 +433,18 @@ const styles = StyleSheet.create({
     fontWeight: '300',
   },
   headerTitle: {
-  fontSize: scaleFont(22),
-  fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
-  color: WHITE,
-  textAlign: 'center',
-  flex: 1,
-  marginLeft: scaleWidth(5),
-  ...Platform.select({
-    android: {
-      includeFontPadding: false,
-      fontFamily: 'sans-serif-condensed', // Android system font
-    },
-  }),
+    fontSize: scaleFont(22),
+    fontWeight: Platform.OS === 'ios' ? '900' : 'bold',
+    color: WHITE,
+    textAlign: 'center',
+    flex: 1,
+    marginLeft: scaleWidth(5),
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+        fontFamily: 'sans-serif-condensed',
+      },
+    }),
   },
   headerSpacer: {
     width: scaleWidth(36),
@@ -472,7 +458,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: scaleWidth(35),
     marginTop: scaleWidth(-10),
     paddingTop: scaleWidth(20),
-    // transform: [{ translateY: -scaleHeight(10) }], // 🔼 move up slightly
   },
 
   // Quick Analysis Section
@@ -571,22 +556,7 @@ const styles = StyleSheet.create({
 
   // Input Section
   inputContainer: {
-  //   flexDirection: "row",
-  //   alignItems: "center",
-  //   backgroundColor: WHITE,
-  //   padding: scaleWidth(8),
-  //   borderTopWidth: 1,
-  //   borderColor: LIGHT_GREY,
-  //   marginHorizontal: scaleWidth(20),
-  //   marginBottom: scaleHeight(10),
-  //   borderRadius: scaleWidth(20),
-  //   shadowColor: '#000',
-  //   shadowOffset: { width: 0, height: -1 },
-  //   shadowOpacity: 0.05,
-  //   shadowRadius: 3,
-  //   elevation: 3,
-  // },
-  flexDirection: 'row',
+    flexDirection: 'row',
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: '#EEE',
@@ -596,15 +566,6 @@ const styles = StyleSheet.create({
     backgroundColor: WHITE,
   },
   input: {
-    // flex: 1,
-    // backgroundColor: colors.backgroundLight || '#F9F9F9',
-    // borderRadius: scaleWidth(20),
-    // paddingHorizontal: scaleWidth(15),
-    // paddingVertical: scaleHeight(10),
-    // fontSize: scaleFont(15),
-    // marginRight: scaleWidth(8),
-    // color: colors.textPrimary || '#333',
-    // maxHeight: scaleHeight(100),
     flex: 1,
     borderWidth: 1,
     borderColor: '#DDD',
@@ -615,15 +576,8 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     backgroundColor: '#F9F9F9',
     maxHeight: scaleHeight(80),
-    },
+  },
   sendButton: {
-    // backgroundColor: colors.secondaryButton || '#4A6572',
-    // borderRadius: scaleWidth(20),
-    // padding: scaleWidth(10),
-    // width: scaleWidth(40),
-    // height: scaleWidth(40),
-    // justifyContent: 'center',
-    // alignItems: 'center',
     backgroundColor: colors.secondaryButton || '#4A6572',
     borderRadius: scaleWidth(20),
     paddingHorizontal: scaleWidth(20),
@@ -634,8 +588,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendText: {
-    // color: WHITE,
-    // fontSize: scaleFont(18),
     color: WHITE,
     fontSize: scaleFont(14),
     fontWeight: '600',

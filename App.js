@@ -10,13 +10,19 @@ import Summary from './components/screens/Summary';
 import Appointment from './components/screens/Appointment';
 import AudioCall from './components/screens/AudioCall';
 import SMS from './components/screens/SMS';
-import ProfileScreen from './components/screens/ProfileScreen'; 
+import ProfileScreen from './components/screens/ProfileScreen';
 import PatientEditForm from './components/screens/PatientEditScreen';
 import ChangePassword from './components/screens/ChangePassword';
 import AccountSettings from './components/screens/AccountSettings';
 import FollowUp from './components/screens/FollowUp';
 import DataList from './components/screens/DataList';
 import ChatScreen from './components/screens/ChatScreen';
+import AIModulesScreen from './components/screens/AIModulesScreen';
+import PredictiveAnalysisScreen from './components/screens/PredictiveAnalysisScreen';
+import AnomalyDetectionScreen from './components/screens/AnomalyDetectionScreen';
+import ClinicalDecisionSupportScreen from './components/screens/ClinicalDecisionSupportScreen';
+import DietRecommendationScreen from './components/screens/DietRecommendationScreen';
+import MedicalRecommendationScreen from './components/screens/MedicalRecommendationScreen';
 import Notifications from './components/screens/Notifications';
 import SettingsScreen from './components/screens/SettingsScreen';
 import MCQ_Agent from './components/screens/MCQ_Agent';
@@ -51,13 +57,13 @@ export default function App() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator 
-        screenOptions={{ headerShown: false }} 
+      <Stack.Navigator
+        screenOptions={{ headerShown: false }}
         initialRouteName={initialRoute}
       >
         {/* Splash Screen (shown only on first launch) */}
         <Stack.Screen name="Splash" component={SplashScreen} />
-        
+
         {/* Auth Flow */}
         <Stack.Screen name="Login" component={Login} />
         <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
@@ -70,14 +76,20 @@ export default function App() {
         <Stack.Screen name="Appointment" component={Appointment} />
         <Stack.Screen name="AudioCall" component={AudioCall} />
         <Stack.Screen name="SMS" component={SMS} />
-        <Stack.Screen name="Profile" component={ProfileScreen}/>
-        <Stack.Screen name="PatientEditForm" component={PatientEditForm}/>
-        <Stack.Screen name="ChangePassword" component={ChangePassword}/>
-        <Stack.Screen name="AccountSettings" component={AccountSettings}/>
-        <Stack.Screen name="FollowUp" component={FollowUp}/>
+        <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen name="PatientEditForm" component={PatientEditForm} />
+        <Stack.Screen name="ChangePassword" component={ChangePassword} />
+        <Stack.Screen name="AccountSettings" component={AccountSettings} />
+        <Stack.Screen name="FollowUp" component={FollowUp} />
         <Stack.Screen name="DataList" component={DataList} />
         <Stack.Screen name="Chat" component={ChatScreen} />
-        <Stack.Screen name="Notifications" component={Notifications} /> 
+        <Stack.Screen name="AIModules" component={AIModulesScreen} />
+        <Stack.Screen name="PredictiveAnalysis" component={PredictiveAnalysisScreen} />
+        <Stack.Screen name="AnomalyDetection" component={AnomalyDetectionScreen} />
+        <Stack.Screen name="ClinicalDecisionSupport" component={ClinicalDecisionSupportScreen} />
+        <Stack.Screen name="DietRecommendation" component={DietRecommendationScreen} />
+        <Stack.Screen name="MedicalRecommendation" component={MedicalRecommendationScreen} />
+        <Stack.Screen name="Notifications" component={Notifications} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen name="MCQ_Agent" component={MCQ_Agent} />
         <Stack.Screen name="StoreSummary" component={StoreSummaryScreen} />
