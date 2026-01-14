@@ -949,71 +949,59 @@ export default function Home({ navigation }) {
   }, [scaleWidth, scaleHeight, scaleFont, vitalsStatus, getStatusColor, formatTimeAgo, formatDateTime]);
 
   return (
-    <SafeAreaProvider>
-      {/* Set status bar style for the navy blue background */}
-      <StatusBar barStyle="light-content" backgroundColor={NAVY_BLUE} />
+  <SafeAreaProvider>
+    <StatusBar barStyle="light-content" backgroundColor={NAVY_BLUE} />
 
-      {/* Main container starts with light gray background */}
-      <SafeAreaView style={styles(scaleWidth, scaleHeight, scaleFont).fullScreenContainer}>
-        <View style={styles(scaleWidth, scaleHeight, scaleFont).mainContainer}>
-          
-          {/* NEW HEADER DESIGN - Like Home (2).js */}
-          <View style={[styles(scaleWidth, scaleHeight, scaleFont).headerContainer, { backgroundColor: NAVY_BLUE }]}>
-            <View style={styles(scaleWidth, scaleHeight, scaleFont).headerContent}>
-              {/* Top row: Greeting + Notification */}
-              <View style={styles(scaleWidth, scaleHeight, scaleFont).headerTopRow}>
-                <Text style={styles(scaleWidth, scaleHeight, scaleFont).greetingText}>
-                  {greeting}
-                </Text>
-                
-                {/* Notification Icon */}
-                <TouchableOpacity 
-                  style={styles(scaleWidth, scaleHeight, scaleFont).notificationButton} 
-                  onPress={openNotifications}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationIconContainer}>
-                    <Image 
-                      source={require('../../android/app/src/assets/images/bell.png')} 
-                      style={styles(scaleWidth, scaleHeight, scaleFont).notificationImage} 
-                      resizeMode="contain" 
-                    />
-                    
-                    {/* Dynamic Notification Badge */}
-                    {unreadCount > 0 && (
-                      <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadge}>
-                        <Text style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadgeText}>
-                          {unreadCount > 9 ? '9+' : unreadCount}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              </View>
-              
-              {/* Username */}
-              <Text style={styles(scaleWidth, scaleHeight, scaleFont).userNameText} numberOfLines={1}>
-                {userName || 'User'}
+    <SafeAreaView style={styles(scaleWidth, scaleHeight, scaleFont).fullScreenContainer}>
+      <View style={styles(scaleWidth, scaleHeight, scaleFont).mainContainer}>
+        
+        {/* HEADER - Navy Blue with curved bottom */}
+        <View style={styles(scaleWidth, scaleHeight, scaleFont).topDarkSection}>
+          <View style={styles(scaleWidth, scaleHeight, scaleFont).headerContainer}>
+            <View style={styles(scaleWidth, scaleHeight, scaleFont).headerTopRow}>
+              <Text style={styles(scaleWidth, scaleHeight, scaleFont).greetingText}>
+                {greeting}
               </Text>
+              
+              <TouchableOpacity 
+                style={styles(scaleWidth, scaleHeight, scaleFont).notificationButton} 
+                onPress={openNotifications}
+                activeOpacity={0.7}
+              >
+                <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationIconContainer}>
+                  <Image 
+                    source={require('../../android/app/src/assets/images/bell.png')} 
+                    style={styles(scaleWidth, scaleHeight, scaleFont).notificationImage} 
+                    resizeMode="contain" 
+                  />
+                  
+                  {unreadCount > 0 && (
+                    <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadge}>
+                      <Text style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadgeText}>
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
             </View>
-          </View>
-
-          {/* White Cards Section */}
-          <View style={styles(scaleWidth, scaleHeight, scaleFont).cardsWrapper}>
-            {/* <ScrollView
-              style={styles(scaleWidth, scaleHeight, scaleFont).cardsScrollView}
-              contentContainerStyle={{ paddingBottom: scaleHeight(20) }}
-              showsVerticalScrollIndicator={false}
-            > */}
-              {renderCard('Blood Pressure (bpm)', measurements.bloodPressure, 'mmHg', openList, openSummary, 'bloodPressure')}
-              {renderCard('Blood Glucose (bg)', measurements.bloodGlucose, 'mg/dl', openList, openSummary, 'bloodGlucose')}
-              {renderCard('Weight (wt)', measurements.weight, 'lb', openList, openSummary, 'weight')}
-            {/* </ScrollView> */}
+            
+            <Text style={styles(scaleWidth, scaleHeight, scaleFont).userNameText} numberOfLines={1}>
+              {userName || 'User'}
+            </Text>
           </View>
         </View>
-      </SafeAreaView>
-    </SafeAreaProvider>
-  );
+
+        {/* WHITE SECTION - Cards with curved top */}
+        <View style={styles(scaleWidth, scaleHeight, scaleFont).bottomLightSection}>
+          {renderCard('Blood Pressure (bpm)', measurements.bloodPressure, 'mmHg', openList, openSummary, 'bloodPressure')}
+          {renderCard('Blood Glucose (bg)', measurements.bloodGlucose, 'mg/dl', openList, openSummary, 'bloodGlucose')}
+          {renderCard('Weight (wt)', measurements.weight, 'lb', openList, openSummary, 'weight')}
+        </View>
+      </View>
+    </SafeAreaView>
+  </SafeAreaProvider>
+);
 }
 
 // --- Style Sheet ---
@@ -1027,13 +1015,16 @@ const styles = (scaleWidth, scaleHeight, scaleFont) => StyleSheet.create({
   },
   
   // NEW HEADER STYLES 
+  topDarkSection: {
+  backgroundColor: NAVY_BLUE,
+  height: scaleHeight(145),
+  // borderBottomLeftRadius: scaleWidth(35),
+  // borderBottomRightRadius: scaleWidth(35),
+  paddingBottom: scaleHeight(60),
+  },
   headerContainer: {
     paddingTop: scaleHeight(20),
     paddingHorizontal: scaleWidth(24),
-    paddingBottom: scaleHeight(100), // Extra space for curve effect
-  },
-  headerContent: {
-    paddingBottom: scaleHeight(10),
   },
   headerTopRow: {
     flexDirection: 'row',
@@ -1090,21 +1081,25 @@ const styles = (scaleWidth, scaleHeight, scaleFont) => StyleSheet.create({
   },
   
   // Cards wrapper - Positioned to overlap header curve
-  cardsWrapper: {
-    flex: 1,
-    marginTop: scaleHeight(-70), // Pull up to overlap header
-    paddingHorizontal: scaleWidth(20),
-  },
+  bottomLightSection: {
+  flex: 1,
+  backgroundColor: 'white',
+  borderTopLeftRadius: scaleWidth(35),
+  borderTopRightRadius: scaleWidth(35),
+  marginTop: scaleWidth(-20),
+  paddingTop: scaleWidth(20),
+  paddingHorizontal: scaleWidth(20),
+},
   // cardsScrollView: {
   //   flex: 1,
   // },
   
   // CARD STYLES
   card: {
-    marginTop: scaleHeight(6),
+    marginTop: scaleHeight(2),
     backgroundColor: '#FFFFFF',
     borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(10),
+    paddingVertical: scaleHeight(6),
     paddingHorizontal: scaleWidth(16),
     marginBottom: scaleHeight(16),
     shadowColor: '#000',
