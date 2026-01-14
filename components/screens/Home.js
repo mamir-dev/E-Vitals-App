@@ -1,7 +1,7 @@
 /* eslint-disable react-native/no-inline-styles */
 import React, { useState, useEffect, useCallback, useRef } from 'react'; // Amna Changes: Added useCallback and useRef
-import { 
-  View, Text, TouchableOpacity, StyleSheet, Image, StatusBar, ScrollView 
+import {
+  View, Text, TouchableOpacity, StyleSheet, Image, StatusBar, ScrollView, ActivityIndicator
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../config/globall';
@@ -59,7 +59,7 @@ const generateMedicalAlerts = (patientData) => {
   // Blood Glucose Alerts
   if (measurements.bloodGlucose) {
     const glucose = parseFloat(measurements.bloodGlucose.blood_glucose_value_1 || measurements.bloodGlucose.value || 0);
-    
+
     if (glucose > 126) {
       alerts.push({
         id: `glucose-high-${glucose}`,
@@ -89,7 +89,7 @@ const generateMedicalAlerts = (patientData) => {
   if (measurements.weight) {
     const weight = measurements.weight.value;
     const bmi = (weight / (1.7 * 1.7)).toFixed(1);
-    
+
     if (bmi > 30) {
       alerts.push({
         id: `weight-high-${weight}`,
@@ -161,25 +161,25 @@ const loadSystemNotifications = async () => {
 const processNotifications = async (patientData) => {
   try {
     console.log('📄 Processing notifications in Home...');
-    
+
     // Load existing data
     const storedAssessments = await loadStoredAssessments();
     const systemNotifications = await loadSystemNotifications();
     const savedNotifications = await loadSavedNotifications();
-    
+
     // Generate new alerts
     const newAlerts = patientData ? generateMedicalAlerts(patientData) : [];
-    
+
     // Use Map to ensure uniqueness
     const notificationMap = new Map();
-    
+
     // Add saved notifications first (preserve read status)
     if (savedNotifications && savedNotifications.length > 0) {
       savedNotifications.forEach(notif => {
         notificationMap.set(notif.id, notif);
       });
     }
-    
+
     // Process new alerts
     newAlerts.forEach(newAlert => {
       if (notificationMap.has(newAlert.id)) {
@@ -192,7 +192,7 @@ const processNotifications = async (patientData) => {
         notificationMap.set(newAlert.id, newAlert);
       }
     });
-    
+
     // Process assessments
     storedAssessments.forEach(assessment => {
       if (notificationMap.has(assessment.id)) {
@@ -205,7 +205,7 @@ const processNotifications = async (patientData) => {
         notificationMap.set(assessment.id, assessment);
       }
     });
-    
+
     // Process system notifications
     systemNotifications.forEach(sysNotif => {
       if (notificationMap.has(sysNotif.id)) {
@@ -218,7 +218,7 @@ const processNotifications = async (patientData) => {
         notificationMap.set(sysNotif.id, sysNotif);
       }
     });
-    
+
     // Clean up old notifications (older than 30 days)
     const now = new Date();
     const idsToRemove = [];
@@ -230,21 +230,21 @@ const processNotifications = async (patientData) => {
       }
     });
     idsToRemove.forEach(id => notificationMap.delete(id));
-    
+
     // Convert to array and sort
     const finalNotifications = Array.from(notificationMap.values());
     finalNotifications.sort((a, b) => new Date(b.date) - new Date(a.date));
-    
+
     // Save state
     await AsyncStorage.setItem('notificationsState', JSON.stringify(finalNotifications));
-    
+
     // Update badge count
     const unreadCount = finalNotifications.filter(n => !n.read).length;
     await AsyncStorage.setItem('unreadBadgeCount', unreadCount.toString());
-    
+
     console.log('✅ Notifications processed:', finalNotifications.length, 'Unread:', unreadCount);
     return unreadCount;
-    
+
   } catch (error) {
     console.error('❌ Error processing notifications:', error);
     return 0;
@@ -255,11 +255,11 @@ const processNotifications = async (patientData) => {
 
 export default function Home({ navigation }) {
   const { width, height } = useWindowDimensions();
-  
+
   // Define scaling functions INSIDE the component to access width and height
   const scaleWidth = size =>
     Math.min((width / guidelineBaseWidth) * size, size * 1.25);
- 
+
   const scaleHeight = size =>
     Math.min((height / guidelineBaseHeight) * size, size * 1.25);
 
@@ -280,6 +280,7 @@ export default function Home({ navigation }) {
     bloodGlucose: 'normal',
     weight: 'normal',
   });
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   // Amna Changes: Add refs to track loading state and prevent multiple simultaneous calls
   const isFetchingRef = useRef(false);
@@ -305,12 +306,12 @@ export default function Home({ navigation }) {
     try {
       // Amna Changes: Skip if already fetching
       if (isFetchingRef.current) return;
-      
+
       console.log('🔔 Fetching unread count...');
-      
+
       // Get the badge count from AsyncStorage
       const savedBadgeCount = await AsyncStorage.getItem('unreadBadgeCount');
-      
+
       if (savedBadgeCount !== null) {
         const count = parseInt(savedBadgeCount, 10);
         console.log('📊 Badge count from storage:', count);
@@ -329,10 +330,10 @@ export default function Home({ navigation }) {
   const fetchPracticeRanges = useCallback(async (practiceId) => {
     try {
       if (!practiceId) return null;
-      
+
       console.log('📊 Fetching practice ranges for practiceId:', practiceId);
       const rangesResult = await apiService.getPracticeRanges(practiceId);
-      
+
       if (rangesResult && rangesResult.data) {
         const ranges = rangesResult.data.ranges || rangesResult.data;
         setPracticeRanges(ranges);
@@ -361,14 +362,14 @@ export default function Home({ navigation }) {
       const bp = measurements.bloodPressure;
       const systolic = parseFloat(bp.systolic_pressure || bp.systolic);
       const diastolic = parseFloat(bp.diastolic_pressure || bp.diastolic);
-      
+
       if (!isNaN(systolic) && !isNaN(diastolic)) {
         const bpRanges = ranges.blood_pressure || {};
-        const isHigh = systolic >= (bpRanges.high?.systolic?.min || 140) || 
-                       diastolic >= (bpRanges.high?.diastolic?.min || 90);
-        const isLow = systolic <= (bpRanges.low?.systolic?.max || 90) || 
-                      diastolic <= (bpRanges.low?.diastolic?.max || 60);
-        
+        const isHigh = systolic >= (bpRanges.high?.systolic?.min || 140) ||
+          diastolic >= (bpRanges.high?.diastolic?.min || 90);
+        const isLow = systolic <= (bpRanges.low?.systolic?.max || 90) ||
+          diastolic <= (bpRanges.low?.diastolic?.max || 60);
+
         if (isHigh) status.bloodPressure = 'high';
         else if (isLow) status.bloodPressure = 'low';
         else status.bloodPressure = 'normal';
@@ -378,12 +379,12 @@ export default function Home({ navigation }) {
     // Blood Glucose Status
     if (measurements.bloodGlucose) {
       const glucose = parseFloat(measurements.bloodGlucose.value || measurements.bloodGlucose.blood_glucose_value_1);
-      
+
       if (!isNaN(glucose) && glucose > 0) {
         const glucoseRanges = ranges.blood_glucose || {};
         const isHigh = glucose >= (glucoseRanges.high?.min || 126);
         const isLow = glucose <= (glucoseRanges.low?.max || 70);
-        
+
         if (isHigh) status.bloodGlucose = 'high';
         else if (isLow) status.bloodGlucose = 'low';
         else status.bloodGlucose = 'normal';
@@ -401,7 +402,7 @@ export default function Home({ navigation }) {
         const weightRanges = ranges.weight || {};
         const isHigh = bmi >= (weightRanges.high_bmi?.min || 30);
         const isLow = bmi <= (weightRanges.low_bmi?.max || 18.5);
-        
+
         if (isHigh) status.weight = 'high';
         else if (isLow) status.weight = 'low';
         else status.weight = 'normal';
@@ -420,10 +421,104 @@ export default function Home({ navigation }) {
       case 'low':
         return '#F59E0B'; // Yellow/Orange
       case 'normal':
-      default:
         return '#10B981'; // Green
     }
   }, []);
+
+  // Amna Changes: Helper to process raw vitals data into UI format
+  const processMeasurementsData = useCallback((latestMeasurements) => {
+    const processed = {
+      bloodPressure: null,
+      bloodGlucose: null,
+      weight: null
+    };
+
+    if (!latestMeasurements) return processed;
+
+    // Process Blood Pressure
+    if (latestMeasurements.blood_pressure) {
+      const bp = latestMeasurements.blood_pressure;
+      processed.bloodPressure = {
+        systolic_pressure: bp.systolic_pressure || '--',
+        diastolic_pressure: bp.diastolic_pressure || '--',
+        pulse: bp.pulse || '--',
+        measure_new_date_time: bp.measure_new_date_time || bp.measure_date_time || bp.created_at || 'Recent'
+      };
+    }
+
+    // Process Blood Glucose
+    if (latestMeasurements.blood_glucose && latestMeasurements.blood_glucose !== null) {
+      const bg = latestMeasurements.blood_glucose;
+      const bgValue = bg.blood_glucose_value_1;
+
+      const displayValue = (bgValue !== null && bgValue !== undefined && bgValue !== '')
+        ? String(bgValue)
+        : '--';
+
+      processed.bloodGlucose = {
+        value: displayValue,
+        measure_new_date_time: bg.measure_new_date_time || bg.measure_date_time || bg.created_at || '--'
+      };
+    }
+
+    // Process Weight
+    if (latestMeasurements.weight && latestMeasurements.weight !== null) {
+      const weight = latestMeasurements.weight;
+      let weightValue = weight.weight !== null && weight.weight !== undefined ? weight.weight : (weight.weight_value || null);
+
+      if (weightValue === null || weightValue === undefined || weightValue === '') {
+        weightValue = '--';
+      } else {
+        const numValue = parseFloat(weightValue);
+        if (!isNaN(numValue) && numValue > 0) {
+          weightValue = (numValue * 2.20462).toFixed(1);
+        } else {
+          weightValue = String(weightValue);
+        }
+      }
+
+      processed.weight = {
+        value: weightValue,
+        measure_new_date_time: weight.measure_new_date_time || weight.measure_date_time || weight.created_at || '--',
+        unit: 'lb'
+      };
+    }
+
+    return processed;
+  }, []);
+
+  // Amna Changes: Load cached data from AsyncStorage instantly
+  const loadCachedData = useCallback(async () => {
+    try {
+      const cachedVitals = await AsyncStorage.getItem('latestVitals');
+      if (cachedVitals) {
+        console.log('📦 Loading cached vitals for instant display...');
+        const parsedVitals = JSON.parse(cachedVitals);
+        const processed = processMeasurementsData(parsedVitals);
+
+        setMeasurements(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(processed)) return prev;
+          return processed;
+        });
+
+        // Also try to determine status if ranges exist
+        if (practiceRanges) {
+          const status = determineVitalsStatus(processed, practiceRanges);
+          setVitalsStatus(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(status)) return prev;
+            return status;
+          });
+        }
+
+        // Hide initial loading if we have some data
+        if (processed.bloodPressure || processed.bloodGlucose || processed.weight) {
+          setIsLoadingData(false);
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Error loading cached vitals:', e);
+    }
+  }, [processMeasurementsData, determineVitalsStatus, practiceRanges]);
 
   // Amna Changes: Debounced fetch function to prevent rapid consecutive calls
   const debouncedFetchPatientData = useCallback(async () => {
@@ -431,7 +526,7 @@ export default function Home({ navigation }) {
     if (fetchDebounceTimeoutRef.current) {
       clearTimeout(fetchDebounceTimeoutRef.current);
     }
-    
+
     // Set a new timeout to fetch after a short delay (prevents multiple rapid calls)
     fetchDebounceTimeoutRef.current = setTimeout(async () => {
       await fetchPatientData();
@@ -445,41 +540,63 @@ export default function Home({ navigation }) {
       console.log('⏳ Already fetching data, skipping...');
       return null;
     }
-    
+
     // Amna Changes: Rate limiting - don't fetch more than once every 5 seconds
     const now = Date.now();
     if (now - lastFetchTimeRef.current < 5000) {
       console.log('⏳ Rate limiting: Skipping fetch, last fetch was too recent');
       return null;
     }
-    
+
     isFetchingRef.current = true;
     lastFetchTimeRef.current = now;
-    
+
+    // Show loading if we don't have measurements yet
+    if (!measurements.bloodPressure && !measurements.bloodGlucose && !measurements.weight) {
+      setIsLoadingData(true);
+    }
+
     try {
       let practiceId = null;
       let patientId = null;
-      
+
       // Amna Changes: Optimized AsyncStorage calls - fetch all at once
-      const [userData, storedPracticeId, storedPatientId] = await Promise.all([
+      const [userData, storedPracticeId, storedPatientId, cachedVitals] = await Promise.all([
         AsyncStorage.getItem('user'),
         AsyncStorage.getItem('practiceId'),
-        AsyncStorage.getItem('patientId')
+        AsyncStorage.getItem('patientId'),
+        AsyncStorage.getItem('latestVitals')
       ]);
-      
+
+      // If we have cached vitals, update measurements immediately for instant UI response
+      if (cachedVitals) {
+        console.log('📦 Found cached latest vitals, applying immediately');
+        const parsedVitals = JSON.parse(cachedVitals);
+        const processed = processMeasurementsData(parsedVitals);
+
+        setMeasurements(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(processed)) return prev;
+          return processed;
+        });
+
+        if (processed.bloodPressure || processed.bloodGlucose || processed.weight) {
+          setIsLoadingData(false);
+        }
+      }
+
       if (userData) {
         const user = JSON.parse(userData);
         practiceId = user.practice_id;
         // Use user_id (user.id) instead of patient_id string for API calls
         // The API endpoint expects numeric ID, not the patient_id string
         patientId = user.id || user.user_id; // Use user.id (user_id) as primary
-        
+
         // If we have user.id, make sure it's stored correctly (override any old string patient_id)
         if (user.id && !isNaN(user.id)) {
           await AsyncStorage.setItem('patientId', String(user.id));
         }
       }
-      
+
       // If not in user data, try separate storage
       if (!practiceId) {
         practiceId = storedPracticeId;
@@ -494,7 +611,7 @@ export default function Home({ navigation }) {
           await AsyncStorage.removeItem('patientId');
         }
       }
-      
+
       // If still not found, try to fetch from API
       if (!practiceId || !patientId) {
         try {
@@ -528,143 +645,63 @@ export default function Home({ navigation }) {
           console.log('Could not fetch user data from API:', apiError.message);
         }
       }
-      
+
       // Silently return null if IDs not found (don't show error)
       if (!practiceId || !patientId) {
         console.log('⚠️ Practice ID or Patient ID not found - skipping vitals fetch');
         isFetchingRef.current = false;
         return null;
       }
-  
-      // Use getPatientDetails endpoint which returns all latest vitals at once
+
       console.log('📊 Fetching patient details with latest vitals...');
       console.log('🔍 Using practiceId:', practiceId, 'patientId:', patientId);
-      
+
       let latestMeasurements = {};
-      
+
       try {
-        const detailsResult = await apiService.getPatientDetails(practiceId, patientId);
-        console.log('✅ API Response received:', JSON.stringify(detailsResult, null, 2));
-        
-        if (!detailsResult || !detailsResult.success) {
-          console.error('❌ API returned unsuccessful response:', detailsResult);
-          isFetchingRef.current = false;
-          return null;
-        }
-        
-        const patientData = detailsResult.data || detailsResult;
-        const patient = patientData.patient || patientData;
-        
-        // Amna Changes: Parallel AsyncStorage operations
-        const storagePromises = [];
-        
-        // Store patients_table_id for future measurement API calls
-        if (patient && (patient.patients_table_id || patient.id)) {
-          const patientsTableId = String(patient.patients_table_id || patient.id);
-          storagePromises.push(
-            AsyncStorage.setItem('patientsTableId', patientsTableId),
-            AsyncStorage.setItem('patientDetails', JSON.stringify(patient))
-          );
-          console.log('💾 Stored patients_table_id:', patientsTableId);
-        }
-        
-        // Execute all storage operations in parallel
-        await Promise.all(storagePromises);
-        
-        latestMeasurements = patientData.latest_measurements || {};
-        
-        console.log('📋 Received latest measurements:', JSON.stringify(latestMeasurements, null, 2));
-        
-        if (!latestMeasurements || Object.keys(latestMeasurements).length === 0) {
-          console.warn('⚠️ No measurements found in response. Patient may not have any vitals data yet.');
-        }
-      } catch (apiError) {
-        console.error('❌ Error calling getPatientDetails API:', apiError);
-        console.error('Error message:', apiError.message);
-        isFetchingRef.current = false;
-        return null;
-      }
-      
-      const processedMeasurements = { 
-        bloodPressure: null, 
-        bloodGlucose: null, 
-        weight: null 
-      };
-      
-      // Process Blood Pressure
-      if (latestMeasurements.blood_pressure) {
-        console.log('✅ Found blood pressure data');
-        const bp = latestMeasurements.blood_pressure;
-        processedMeasurements.bloodPressure = {
-          systolic_pressure: bp.systolic_pressure || '--',
-          diastolic_pressure: bp.diastolic_pressure || '--',
-          pulse: bp.pulse || '--',
-          measure_new_date_time: bp.measure_new_date_time || bp.measure_date_time || bp.created_at || 'Recent'
-        };
-      }
-      
-      // Process Blood Glucose
-      if (latestMeasurements.blood_glucose && latestMeasurements.blood_glucose !== null) {
-        console.log('✅ Found blood glucose data:', JSON.stringify(latestMeasurements.blood_glucose, null, 2));
-        const bg = latestMeasurements.blood_glucose;
-        const bgValue = bg.blood_glucose_value_1;
-        console.log('🔍 Blood glucose value_1:', bgValue, 'Type:', typeof bgValue);
-        
-        // Handle 0 as a valid value (0 is falsy but valid)
-        const displayValue = (bgValue !== null && bgValue !== undefined && bgValue !== '') 
-          ? String(bgValue) 
-          : '--';
-        
-        processedMeasurements.bloodGlucose = {
-          value: displayValue,
-          measure_new_date_time: bg.measure_new_date_time || bg.measure_date_time || bg.created_at || '--'
-        };
-        console.log('✅ Processed blood glucose:', processedMeasurements.bloodGlucose);
-      } else {
-        console.log('ℹ️ No blood glucose data available. latestMeasurements.blood_glucose is:', latestMeasurements.blood_glucose);
-      }
-      
-      // Process Weight
-      if (latestMeasurements.weight && latestMeasurements.weight !== null) {
-        console.log('✅ Found weight data:', JSON.stringify(latestMeasurements.weight, null, 2));
-        const weight = latestMeasurements.weight;
-        let weightValue = weight.weight !== null && weight.weight !== undefined ? weight.weight : (weight.weight_value || null);
-        console.log('🔍 Weight value:', weightValue, 'Type:', typeof weightValue);
-        
-        // Handle null/undefined/empty
-        if (weightValue === null || weightValue === undefined || weightValue === '') {
-          weightValue = '--';
+        // Step 1: Try to fetch ONLY latest vitals using the new lightweight API
+        console.log('📡 Fetching only latest vitals from new API...');
+        const vitalsResult = await apiService.getLatestVitals();
+
+        if (vitalsResult && vitalsResult.success) {
+          latestMeasurements = vitalsResult.data || {};
+          // Cache the latest vitals for next time
+          await AsyncStorage.setItem('latestVitals', JSON.stringify(latestMeasurements));
         } else {
-          // Convert kg to lbs if needed (weight is typically stored in kg in database)
-          const numValue = parseFloat(weightValue);
-          if (!isNaN(numValue) && numValue > 0) {
-            weightValue = (numValue * 2.20462).toFixed(1);
-          } else {
-            weightValue = String(weightValue);
+          // Step 2: Fallback to getPatientDetails if new API fails or structure differs
+          console.log('📡 Fallback: Fetching full patient details...');
+          const detailsResult = await apiService.getPatientDetails(practiceId, patientId);
+          if (detailsResult && detailsResult.success) {
+            const patientData = detailsResult.data || detailsResult;
+            latestMeasurements = patientData.latest_measurements || {};
           }
         }
-        
-        processedMeasurements.weight = {
-          value: weightValue,
-          measure_new_date_time: weight.measure_new_date_time || weight.measure_date_time || weight.created_at || '--',
-          unit: 'lb'
-        };
-        console.log('✅ Processed weight:', processedMeasurements.weight);
-      } else {
-        console.log('ℹ️ No weight data available. latestMeasurements.weight is:', latestMeasurements.weight);
+
+        console.log('📋 Received latest measurements:', JSON.stringify(latestMeasurements, null, 2));
+
+        if (!latestMeasurements || Object.keys(latestMeasurements).length === 0) {
+          console.warn('⚠️ No measurements found in response.');
+        }
+      } catch (apiError) {
+        console.error('❌ Error fetching patient data:', apiError);
+        isFetchingRef.current = false;
+        setIsLoadingData(false);
+        return null;
       }
-  
+
+      const processedMeasurements = processMeasurementsData(latestMeasurements);
+
       // Amna Changes: Update state in a batch
       setMeasurements(prev => {
-        // Only update if values actually changed to prevent unnecessary re-renders
         if (JSON.stringify(prev) === JSON.stringify(processedMeasurements)) {
           return prev;
         }
         return processedMeasurements;
       });
-      
+
       console.log('✅ Latest vitals updated:', processedMeasurements);
-      
+      setIsLoadingData(false);
+
       // Fetch practice ranges if not already loaded
       if (!practiceRanges && practiceId) {
         const ranges = await fetchPracticeRanges(practiceId);
@@ -686,7 +723,7 @@ export default function Home({ navigation }) {
         });
         console.log('🎨 Vitals status determined:', status);
       }
-      
+
       // Amna Changes: Process notifications in background without blocking UI
       setTimeout(async () => {
         try {
@@ -696,7 +733,7 @@ export default function Home({ navigation }) {
           console.error('❌ Background notification processing failed:', error);
         }
       }, 0);
-      
+
       // Return data object for notification processing
       isFetchingRef.current = false;
       return { measurements: processedMeasurements, practiceId };
@@ -705,7 +742,7 @@ export default function Home({ navigation }) {
       isFetchingRef.current = false;
       return null;
     }
-  }, [fetchPracticeRanges, determineVitalsStatus, fetchUnreadCount, practiceRanges]);
+  }, [fetchPracticeRanges, determineVitalsStatus, fetchUnreadCount, practiceRanges, processMeasurementsData]);
 
   // Load data on initial mount
   useEffect(() => {
@@ -713,7 +750,7 @@ export default function Home({ navigation }) {
       try {
         console.log('🏠 Home screen mounted, loading initial data...');
         setTimeBasedGreeting();
-        
+
         // Amna Changes: Load user name immediately without delay
         const userData = await AsyncStorage.getItem('user');
         if (userData) {
@@ -723,25 +760,27 @@ export default function Home({ navigation }) {
             : parsed.name || parsed.username || '';
           setUserName(fullName);
         }
-        
-        // Amna Changes: Fetch data immediately but don't wait for it to render UI
-        // This makes the UI appear instantly
+
+        // Amna Changes: Load cached data instantly before triggering refresh
+        await loadCachedData();
+
+        // Amna Changes: Fetch data in background
         debouncedFetchPatientData();
-        
+
       } catch (e) {
         console.error('❌ Error loading initial data:', e);
       }
     };
-    
+
     loadInitialData();
-    
+
     // Amna Changes: Cleanup timeout on unmount
     return () => {
       if (fetchDebounceTimeoutRef.current) {
         clearTimeout(fetchDebounceTimeoutRef.current);
       }
     };
-  }, [setTimeBasedGreeting, debouncedFetchPatientData]); // Amna Changes: Added dependencies
+  }, [setTimeBasedGreeting, debouncedFetchPatientData, loadCachedData]); // Amna Changes: Added dependencies
 
   // Fetch patient data and load user name when the screen comes into focus
   // Also set up polling for real-time updates
@@ -751,7 +790,7 @@ export default function Home({ navigation }) {
         try {
           console.log('🏠 Home screen focused, refreshing data...');
           setTimeBasedGreeting();
-          
+
           // Load user name
           const user = await AsyncStorage.getItem('user');
           if (user) {
@@ -761,18 +800,21 @@ export default function Home({ navigation }) {
               : parsed.name || parsed.username || '';
             setUserName(fullName);
           }
-          
+
+          // Load cached data instantly
+          await loadCachedData();
+
           // Amna Changes: Use debounced fetch to prevent rapid calls
           debouncedFetchPatientData();
-          
+
         } catch (e) {
           console.error('❌ Error loading data:', e);
         }
       };
-      
+
       // Load data immediately when screen comes into focus
       loadData();
-      
+
       // Amna Changes: Optimized polling intervals
       // - Increased intervals to reduce load
       // - Using separate intervals for different tasks
@@ -780,11 +822,11 @@ export default function Home({ navigation }) {
         console.log('🔄 Polling for vitals updates...');
         await debouncedFetchPatientData();
       }, 30000); // Amna Changes: Increased from 10 to 30 seconds for vitals updates
-      
+
       const badgeIntervalId = setInterval(async () => {
         await fetchUnreadCount();
       }, 15000); // Amna Changes: Increased from 5 to 15 seconds for badge count
-      
+
       // Cleanup intervals on unmount
       return () => {
         clearInterval(vitalsIntervalId);
@@ -806,21 +848,21 @@ export default function Home({ navigation }) {
     if (!dateTimeString || dateTimeString === '--' || dateTimeString === 'Recent') {
       return 'Recent';
     }
-    
+
     try {
       const date = new Date(dateTimeString);
       if (isNaN(date.getTime())) {
         return dateTimeString;
       }
-      
+
       // Format as "MMM DD, YYYY · HH:MM AM/PM"
-      const options = { 
-        month: 'short', 
-        day: 'numeric', 
+      const options = {
+        month: 'short',
+        day: 'numeric',
         year: 'numeric',
-        hour: '2-digit', 
+        hour: '2-digit',
         minute: '2-digit',
-        hour12: true 
+        hour12: true
       };
       return date.toLocaleDateString('en-US', options).replace(',', ' ·');
     } catch (error) {
@@ -834,19 +876,19 @@ export default function Home({ navigation }) {
     if (!dateTimeString || dateTimeString === '--' || dateTimeString === 'Recent') {
       return 'Recent';
     }
-    
+
     try {
       const date = new Date(dateTimeString);
       if (isNaN(date.getTime())) {
         return dateTimeString;
       }
-      
+
       const now = new Date();
       const diffMs = now - date;
       const diffMins = Math.floor(diffMs / 60000);
       const diffHours = Math.floor(diffMs / 3600000);
       const diffDays = Math.floor(diffMs / 86400000);
-      
+
       if (diffMins < 1) return 'Just now';
       if (diffMins < 60) return `${diffMins} min ago`;
       if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
@@ -863,145 +905,163 @@ export default function Home({ navigation }) {
     // Show card even if data is null (for BG and Weight when no data exists)
     // Just show "No data available" instead of hiding the card
     const hasData = data !== null && data !== undefined;
-    
+
     // Get status for this vital type
     const status = vitalsStatus[type] || 'normal';
     const statusColor = getStatusColor(status);
-    
+
     // Border color: Red for high, Yellow for low, Green for normal, Gray if no data
     const borderColor = hasData ? statusColor : '#E5E7EB';
-    
+
     return (
-    <View style={[
-      styles(scaleWidth, scaleHeight, scaleFont).card, 
-      !hasData && { opacity: 0.6 },
-      { borderLeftWidth: 4, borderLeftColor: borderColor }
-    ]}>
-      <View style={styles(scaleWidth, scaleHeight, scaleFont).cardHeader}>
-        <View style={styles(scaleWidth, scaleHeight, scaleFont).cardHeaderLeft}>
-          <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardLabel}>{label}</Text>
-          
-          {/* Status badge for high/low readings */}
-          {hasData && status !== 'normal' && (
-            <View style={[styles(scaleWidth, scaleHeight, scaleFont).statusBadge, { backgroundColor: statusColor }]}>
-              <Text style={styles(scaleWidth, scaleHeight, scaleFont).statusBadgeText}>
-                {status === 'high' ? 'HIGH' : 'LOW'}
-              </Text>
-            </View>
-          )}
-          
-          {/* "Days ago" text ABOVE value (SWAPPED POSITION) */}
-          <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardTimeAgo}>
-            {hasData ? formatTimeAgo(data.measure_new_date_time) : 'No data available'}
-          </Text>
-        </View>
-      </View>
-      
-      <View style={styles(scaleWidth, scaleHeight, scaleFont).valueContainer}>
-        <Text style={[
-          styles(scaleWidth, scaleHeight, scaleFont).cardMainValue,
-          hasData && status !== 'normal' && { color: statusColor }
-        ]}>
-          {/* Handle 0 as valid value - check for null/undefined explicitly */}
-          {hasData && data?.systolic_pressure !== null && data?.systolic_pressure !== undefined 
-            ? data.systolic_pressure 
-            : (hasData && data?.value !== null && data?.value !== undefined && data?.value !== '' 
-              ? data.value 
-              : '--')}
-          {hasData && data?.diastolic_pressure && (
-            <Text style={[
-              styles(scaleWidth, scaleHeight, scaleFont).cardSlash,
-              status !== 'normal' && { color: statusColor }
-            ]}>/</Text>
-          )}
-          {hasData && data?.diastolic_pressure && (
-            <Text style={[
-              styles(scaleWidth, scaleHeight, scaleFont).cardSecondValue,
-              status !== 'normal' && { color: statusColor }
-            ]}>{data.diastolic_pressure}</Text>
-          )}
-        </Text>
-      </View>
-      
-      {/* Real date and time BELOW value (SWAPPED POSITION) */}
-      <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardDateTime}>
-        {hasData ? formatDateTime(data.measure_new_date_time) : 'No data available'}
-      </Text>
+      <View style={[
+        styles(scaleWidth, scaleHeight, scaleFont).card,
+        !hasData && { opacity: 0.6 },
+        { borderLeftWidth: 4, borderLeftColor: borderColor }
+      ]}>
+        <View style={styles(scaleWidth, scaleHeight, scaleFont).cardHeader}>
+          <View style={styles(scaleWidth, scaleHeight, scaleFont).cardHeaderLeft}>
+            <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardLabel}>{label}</Text>
 
-      {/* Bottom section with UNIT on left and ICONS on right */}
-      <View style={styles(scaleWidth, scaleHeight, scaleFont).cardFooter}>
-        <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardUnit}>{unit}</Text>
-        <View style={styles(scaleWidth, scaleHeight, scaleFont).cardActions}>
-          <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!hasData} onPress={() => openList(type)}>
-            <View style={styles(scaleWidth, scaleHeight, scaleFont).listCircle}>
-              <Image source={require('../../android/app/src/assets/images/list-icon.png')} style={styles(scaleWidth, scaleHeight, scaleFont).listIcon} />
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!hasData} onPress={() => openSummary(type)}>
-            <View style={[styles(scaleWidth, scaleHeight, scaleFont).chartCircle, { backgroundColor: NAVY_BLUE }]}>
-              <Image source={require('../../android/app/src/assets/images/bar-chart.png')} style={styles(scaleWidth, scaleHeight, scaleFont).chartIcon} />
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-    );
-  }, [scaleWidth, scaleHeight, scaleFont, vitalsStatus, getStatusColor, formatTimeAgo, formatDateTime]);
+            {/* Status badge for high/low readings */}
+            {hasData && status !== 'normal' && (
+              <View style={[styles(scaleWidth, scaleHeight, scaleFont).statusBadge, { backgroundColor: statusColor }]}>
+                <Text style={styles(scaleWidth, scaleHeight, scaleFont).statusBadgeText}>
+                  {status === 'high' ? 'HIGH' : 'LOW'}
+                </Text>
+              </View>
+            )}
 
-  return (
-  <SafeAreaProvider>
-    <StatusBar barStyle="light-content" backgroundColor={NAVY_BLUE} />
-
-    <SafeAreaView style={styles(scaleWidth, scaleHeight, scaleFont).fullScreenContainer}>
-      <View style={styles(scaleWidth, scaleHeight, scaleFont).mainContainer}>
-        
-        {/* HEADER - Navy Blue with curved bottom */}
-        <View style={styles(scaleWidth, scaleHeight, scaleFont).topDarkSection}>
-          <View style={styles(scaleWidth, scaleHeight, scaleFont).headerContainer}>
-            <View style={styles(scaleWidth, scaleHeight, scaleFont).headerTopRow}>
-              <Text style={styles(scaleWidth, scaleHeight, scaleFont).greetingText}>
-                {greeting}
-              </Text>
-              
-              <TouchableOpacity 
-                style={styles(scaleWidth, scaleHeight, scaleFont).notificationButton} 
-                onPress={openNotifications}
-                activeOpacity={0.7}
-              >
-                <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationIconContainer}>
-                  <Image 
-                    source={require('../../android/app/src/assets/images/bell.png')} 
-                    style={styles(scaleWidth, scaleHeight, scaleFont).notificationImage} 
-                    resizeMode="contain" 
-                  />
-                  
-                  {unreadCount > 0 && (
-                    <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadge}>
-                      <Text style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadgeText}>
-                        {unreadCount > 9 ? '9+' : unreadCount}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={styles(scaleWidth, scaleHeight, scaleFont).userNameText} numberOfLines={1}>
-              {userName || 'User'}
+            {/* "Days ago" text ABOVE value (SWAPPED POSITION) */}
+            <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardTimeAgo}>
+              {hasData ? formatTimeAgo(data.measure_new_date_time) : 'No data available'}
             </Text>
           </View>
         </View>
 
-        {/* WHITE SECTION - Cards with curved top */}
-        <View style={styles(scaleWidth, scaleHeight, scaleFont).bottomLightSection}>
-          {renderCard('Blood Pressure (bpm)', measurements.bloodPressure, 'mmHg', openList, openSummary, 'bloodPressure')}
-          {renderCard('Blood Glucose (bg)', measurements.bloodGlucose, 'mg/dl', openList, openSummary, 'bloodGlucose')}
-          {renderCard('Weight (wt)', measurements.weight, 'lb', openList, openSummary, 'weight')}
+        <View style={styles(scaleWidth, scaleHeight, scaleFont).valueContainer}>
+          <Text style={[
+            styles(scaleWidth, scaleHeight, scaleFont).cardMainValue,
+            hasData && status !== 'normal' && { color: statusColor }
+          ]}>
+            {/* Handle 0 as valid value - check for null/undefined explicitly */}
+            {hasData && data?.systolic_pressure !== null && data?.systolic_pressure !== undefined
+              ? data.systolic_pressure
+              : (hasData && data?.value !== null && data?.value !== undefined && data?.value !== ''
+                ? data.value
+                : '--')}
+            {hasData && data?.diastolic_pressure && (
+              <Text style={[
+                styles(scaleWidth, scaleHeight, scaleFont).cardSlash,
+                status !== 'normal' && { color: statusColor }
+              ]}>/</Text>
+            )}
+            {hasData && data?.diastolic_pressure && (
+              <Text style={[
+                styles(scaleWidth, scaleHeight, scaleFont).cardSecondValue,
+                status !== 'normal' && { color: statusColor }
+              ]}>{data.diastolic_pressure}</Text>
+            )}
+          </Text>
+        </View>
+
+        {/* Real date and time BELOW value (SWAPPED POSITION) */}
+        <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardDateTime}>
+          {hasData ? formatDateTime(data.measure_new_date_time) : 'No data available'}
+        </Text>
+
+        {/* Bottom section with UNIT on left and ICONS on right */}
+        <View style={styles(scaleWidth, scaleHeight, scaleFont).cardFooter}>
+          <Text style={styles(scaleWidth, scaleHeight, scaleFont).cardUnit}>{unit}</Text>
+          <View style={styles(scaleWidth, scaleHeight, scaleFont).cardActions}>
+            <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!hasData} onPress={() => openList(type)}>
+              <View style={styles(scaleWidth, scaleHeight, scaleFont).listCircle}>
+                <Image source={require('../../android/app/src/assets/images/list-icon.png')} style={styles(scaleWidth, scaleHeight, scaleFont).listIcon} />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles(scaleWidth, scaleHeight, scaleFont).cardActionButton} disabled={!hasData} onPress={() => openSummary(type)}>
+              <View style={[styles(scaleWidth, scaleHeight, scaleFont).chartCircle, { backgroundColor: NAVY_BLUE }]}>
+                <Image source={require('../../android/app/src/assets/images/bar-chart.png')} style={styles(scaleWidth, scaleHeight, scaleFont).chartIcon} />
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-    </SafeAreaView>
-  </SafeAreaProvider>
-);
+    );
+  }, [scaleWidth, scaleHeight, scaleFont, vitalsStatus, getStatusColor, formatTimeAgo, formatDateTime]);
+
+  return (
+    <SafeAreaProvider>
+      <StatusBar barStyle="light-content" backgroundColor={NAVY_BLUE} />
+
+      {/* Loading State Overlay */}
+      {isLoadingData && !measurements.bloodPressure && !measurements.bloodGlucose && !measurements.weight ? (
+        <View style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(255, 255, 255, 0.9)',
+          zIndex: 999,
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}>
+          <ActivityIndicator size="large" color={NAVY_BLUE} />
+          <Text style={{ marginTop: 12, color: NAVY_BLUE, fontWeight: '600' }}>Loading your vitals...</Text>
+        </View>
+      ) : null}
+
+      <SafeAreaView style={styles(scaleWidth, scaleHeight, scaleFont).fullScreenContainer}>
+        <View style={styles(scaleWidth, scaleHeight, scaleFont).mainContainer}>
+
+          {/* HEADER - Navy Blue with curved bottom */}
+          <View style={styles(scaleWidth, scaleHeight, scaleFont).topDarkSection}>
+            <View style={styles(scaleWidth, scaleHeight, scaleFont).headerContainer}>
+              <View style={styles(scaleWidth, scaleHeight, scaleFont).headerTopRow}>
+                <Text style={styles(scaleWidth, scaleHeight, scaleFont).greetingText}>
+                  {greeting}
+                </Text>
+
+                <TouchableOpacity
+                  style={styles(scaleWidth, scaleHeight, scaleFont).notificationButton}
+                  onPress={openNotifications}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationIconContainer}>
+                    <Image
+                      source={require('../../android/app/src/assets/images/bell.png')}
+                      style={styles(scaleWidth, scaleHeight, scaleFont).notificationImage}
+                      resizeMode="contain"
+                    />
+
+                    {unreadCount > 0 && (
+                      <View style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadge}>
+                        <Text style={styles(scaleWidth, scaleHeight, scaleFont).notificationBadgeText}>
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles(scaleWidth, scaleHeight, scaleFont).userNameText} numberOfLines={1}>
+                {userName || 'User'}
+              </Text>
+            </View>
+          </View>
+
+          {/* WHITE SECTION - Cards with curved top */}
+          <View style={styles(scaleWidth, scaleHeight, scaleFont).bottomLightSection}>
+            {renderCard('Blood Pressure (bpm)', measurements.bloodPressure, 'mmHg', openList, openSummary, 'bloodPressure')}
+            {renderCard('Blood Glucose (bg)', measurements.bloodGlucose, 'mg/dl', openList, openSummary, 'bloodGlucose')}
+            {renderCard('Weight (wt)', measurements.weight, 'lb', openList, openSummary, 'weight')}
+          </View>
+        </View>
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
 }
 
 // --- Style Sheet ---
@@ -1013,14 +1073,14 @@ const styles = (scaleWidth, scaleHeight, scaleFont) => StyleSheet.create({
   mainContainer: {
     flex: 1,
   },
-  
+
   // NEW HEADER STYLES 
   topDarkSection: {
-  backgroundColor: NAVY_BLUE,
-  height: scaleHeight(145),
-  // borderBottomLeftRadius: scaleWidth(35),
-  // borderBottomRightRadius: scaleWidth(35),
-  paddingBottom: scaleHeight(60),
+    backgroundColor: NAVY_BLUE,
+    height: scaleHeight(145),
+    // borderBottomLeftRadius: scaleWidth(35),
+    // borderBottomRightRadius: scaleWidth(35),
+    paddingBottom: scaleHeight(60),
   },
   headerContainer: {
     paddingTop: scaleHeight(20),
@@ -1079,21 +1139,21 @@ const styles = (scaleWidth, scaleHeight, scaleFont) => StyleSheet.create({
     textAlign: 'center',
     lineHeight: scaleFont(11),
   },
-  
+
   // Cards wrapper - Positioned to overlap header curve
   bottomLightSection: {
-  flex: 1,
-  backgroundColor: 'white',
-  borderTopLeftRadius: scaleWidth(35),
-  borderTopRightRadius: scaleWidth(35),
-  marginTop: scaleWidth(-20),
-  paddingTop: scaleWidth(20),
-  paddingHorizontal: scaleWidth(20),
-},
+    flex: 1,
+    backgroundColor: 'white',
+    borderTopLeftRadius: scaleWidth(35),
+    borderTopRightRadius: scaleWidth(35),
+    marginTop: scaleWidth(-20),
+    paddingTop: scaleWidth(20),
+    paddingHorizontal: scaleWidth(20),
+  },
   // cardsScrollView: {
   //   flex: 1,
   // },
-  
+
   // CARD STYLES
   card: {
     marginTop: scaleHeight(2),

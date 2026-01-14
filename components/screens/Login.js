@@ -91,6 +91,18 @@ const Login = ({ navigation }) => {
         if (data.user.id) {
           await AsyncStorage.setItem('patientId', String(data.user.id));
         }
+
+        // Pre-fetch latest vitals immediately after login
+        try {
+          console.log('📡 Pre-fetching latest vitals...');
+          const vitalsData = await apiService.getLatestVitals();
+          if (vitalsData && vitalsData.success) {
+            await AsyncStorage.setItem('latestVitals', JSON.stringify(vitalsData.data));
+            console.log('✅ Latest vitals pre-fetched and stored');
+          }
+        } catch (vitalsError) {
+          console.warn('⚠️ Could not pre-fetch latest vitals:', vitalsError.message);
+        }
       }
 
       // Navigate to main app
@@ -104,15 +116,15 @@ const Login = ({ navigation }) => {
         message: error.message,
         stack: error.stack
       });
-      
+
       // Show user-friendly error message
       let errorMessage = error.message || 'Login failed. Please try again.';
-      
+
       // Provide specific guidance based on error type
       if (error.message.includes('timeout') || error.message.includes('connect')) {
         errorMessage = 'Cannot connect to server.\n\nPlease ensure:\n1. Backend server is running on port 3000\n2. For Android emulator, using IP: 10.0.2.2\n3. Check backend console for errors';
       }
-      
+
       Alert.alert('Login Failed', errorMessage);
     } finally {
       setIsLoading(false);
@@ -138,6 +150,18 @@ const Login = ({ navigation }) => {
         // Store user.id (user_id) for API calls - this is the numeric ID needed
         if (data.user.id) {
           await AsyncStorage.setItem('patientId', String(data.user.id));
+        }
+
+        // Pre-fetch latest vitals immediately after OTP verification
+        try {
+          console.log('📡 Pre-fetching latest vitals after OTP...');
+          const vitalsData = await apiService.getLatestVitals();
+          if (vitalsData && vitalsData.success) {
+            await AsyncStorage.setItem('latestVitals', JSON.stringify(vitalsData.data));
+            console.log('✅ Latest vitals pre-fetched and stored');
+          }
+        } catch (vitalsError) {
+          console.warn('⚠️ Could not pre-fetch latest vitals after OTP:', vitalsError.message);
         }
       }
 

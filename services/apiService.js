@@ -21,45 +21,45 @@ const createTimeout = (ms) => {
  */
 const apiRequest = async (endpoint, options = {}) => {
   const url = `${API_CONFIG.BASE_URL}${endpoint}`;
-  
+
   console.log('🌐 Making API request to:', url);
   console.log('📋 Request method:', options.method || 'GET');
-  
+
   // Get session cookie (session ID from backend response)
   const sessionCookie = await getSessionCookie();
-  
+
   // Prepare headers
   const headers = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
     ...options.headers,
   };
-  
+
   // Add cookie header if session exists
   // Format: evitals_session=<session_id>
   if (sessionCookie) {
     headers['Cookie'] = buildCookieHeader(sessionCookie);
   }
-  
+
   // Prepare fetch options
   const fetchOptions = {
     ...options,
     headers,
     credentials: 'include', // Important for cookies (though React Native has limitations)
   };
-  
+
   try {
     // Create timeout promise
     const timeoutPromise = createTimeout(API_CONFIG.TIMEOUT || 30000);
-    
+
     // Race between fetch and timeout
     const response = await Promise.race([
       fetch(url, fetchOptions),
       timeoutPromise
     ]);
-    
+
     console.log('✅ API response received:', response.status, response.statusText);
-    
+
     // Try to extract cookie from response (may not work in React Native)
     // But also check response body for session_id (for mobile clients)
     try {
@@ -71,12 +71,12 @@ const apiRequest = async (endpoint, options = {}) => {
       // Ignore cookie extraction errors in React Native
       // The session should be managed via response body for mobile
     }
-    
+
     return response;
   } catch (error) {
     console.error('❌ API request error:', error.message);
     console.error('📡 Failed URL:', url);
-    
+
     // Provide more helpful error messages
     if (error.message.includes('timeout')) {
       throw new Error('Request timed out. Please check your internet connection and ensure the server is running.');
@@ -110,25 +110,25 @@ const apiService = {
         mobile_client: true, // Flag to indicate mobile client
       }),
     });
-    
+
     // Parse response first (this consumes the response body)
     const data = await safeParseResponse(response);
-    
+
     // Check response status and data
     if (!response.ok) {
       // Use data message if available, otherwise use status-based message
-      const errorMessage = data?.message || 
-                          (response.status === 401 ? 'Invalid username or password' : 
-                           response.status === 403 ? 'Access denied' :
-                           response.status === 500 ? 'Server error' :
-                           'Login failed');
+      const errorMessage = data?.message ||
+        (response.status === 401 ? 'Invalid username or password' :
+          response.status === 403 ? 'Access denied' :
+            response.status === 500 ? 'Server error' :
+              'Login failed');
       throw new Error(errorMessage);
     }
-    
+
     if (!data || !data.success) {
       throw new Error(data?.message || 'Login failed');
     }
-    
+
     // React Native doesn't expose Set-Cookie headers
     // Backend should return session_id in response body for mobile clients
     if (data.session_id) {
@@ -148,10 +148,10 @@ const apiService = {
         console.warn('⚠️ Cookie extraction not available in React Native');
       }
     }
-    
+
     return data;
   },
-  
+
   /**
    * Verify OTP
    * @param {string} otp - OTP code
@@ -160,19 +160,19 @@ const apiService = {
   verifyOTP: async (otp) => {
     const response = await apiRequest(API_ENDPOINTS.VERIFY_OTP, {
       method: 'POST',
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         otp,
         mobile_client: true // Flag for mobile client
       }),
     });
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'OTP verification failed');
       throw new Error(errorMessage);
     }
-    
+
     // Get session_id from response body (for mobile clients)
     if (data.session_id) {
       await setSessionCookie(data.session_id);
@@ -187,10 +187,10 @@ const apiService = {
         console.warn('Error extracting cookie:', error.message);
       }
     }
-    
+
     return data;
   },
-  
+
   /**
    * Logout user
    * @returns {Promise<boolean>} - True if successful
@@ -200,7 +200,7 @@ const apiService = {
       await apiRequest(API_ENDPOINTS.LOGOUT, {
         method: 'POST',
       });
-      
+
       // Clear session cookie
       await setSessionCookie(null);
       return true;
@@ -211,7 +211,7 @@ const apiService = {
       return false;
     }
   },
-  
+
   /**
    * Get current user
    * @returns {Promise<object>} - User data
@@ -220,23 +220,23 @@ const apiService = {
     const response = await apiRequest(API_ENDPOINTS.GET_CURRENT_USER, {
       method: 'GET',
     });
-    
+
     // Check for session expiry
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to get user data');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Get current patient profile (for patient role)
    * @returns {Promise<object>} - Patient data
@@ -245,22 +245,42 @@ const apiService = {
     const response = await apiRequest(API_ENDPOINTS.GET_PATIENT_ME, {
       method: 'GET',
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to get patient profile');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
+  getLatestVitals: async () => {
+    const response = await apiRequest('/patients/me/latest-vitals', {
+      method: 'GET',
+    });
+
+    if (await isSessionExpired(response)) {
+      await setSessionCookie(null);
+      throw new Error('Session expired. Please login again.');
+    }
+
+    const data = await safeParseResponse(response);
+
+    if (!response.ok || !data || !data.success) {
+      const errorMessage = await handleApiError(response, 'Failed to get latest vitals');
+      throw new Error(errorMessage);
+    }
+
+    return data;
+  },
+
   /**
    * Get patient details (with practiceId and patientId)
    * @param {number} practiceId - Practice ID
@@ -272,22 +292,22 @@ const apiService = {
     const response = await apiRequest(endpoint, {
       method: 'GET',
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to get patient details');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Get blood pressure measurements
    * @param {number} practiceId - Practice ID
@@ -297,36 +317,36 @@ const apiService = {
    */
   getBloodPressure: async (practiceId, patientId, params = {}) => {
     let endpoint = API_ENDPOINTS.GET_BLOOD_PRESSURE(practiceId, patientId);
-    
+
     // Add query parameters
     const queryParams = new URLSearchParams();
     if (params.fromDate) queryParams.append('fromDate', params.fromDate);
     if (params.toDate) queryParams.append('toDate', params.toDate);
     if (params.sortBy) queryParams.append('sortBy', params.sortBy);
-    
+
     if (queryParams.toString()) {
       endpoint += `?${queryParams.toString()}`;
     }
-    
+
     const response = await apiRequest(endpoint, {
       method: 'GET',
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to get blood pressure data');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Get blood glucose measurements
    * @param {number} practiceId - Practice ID
@@ -336,35 +356,35 @@ const apiService = {
    */
   getBloodGlucose: async (practiceId, patientId, params = {}) => {
     let endpoint = API_ENDPOINTS.GET_BLOOD_GLUCOSE(practiceId, patientId);
-    
+
     const queryParams = new URLSearchParams();
     if (params.fromDate) queryParams.append('fromDate', params.fromDate);
     if (params.toDate) queryParams.append('toDate', params.toDate);
     if (params.sortBy) queryParams.append('sortBy', params.sortBy);
-    
+
     if (queryParams.toString()) {
       endpoint += `?${queryParams.toString()}`;
     }
-    
+
     const response = await apiRequest(endpoint, {
       method: 'GET',
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to get blood glucose data');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Get weight measurements
    * @param {number} practiceId - Practice ID
@@ -374,35 +394,35 @@ const apiService = {
    */
   getWeight: async (practiceId, patientId, params = {}) => {
     let endpoint = API_ENDPOINTS.GET_WEIGHT(practiceId, patientId);
-    
+
     const queryParams = new URLSearchParams();
     if (params.fromDate) queryParams.append('fromDate', params.fromDate);
     if (params.toDate) queryParams.append('toDate', params.toDate);
     if (params.sortBy) queryParams.append('sortBy', params.sortBy);
-    
+
     if (queryParams.toString()) {
       endpoint += `?${queryParams.toString()}`;
     }
-    
+
     const response = await apiRequest(endpoint, {
       method: 'GET',
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to get weight data');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Get practice ranges/thresholds
    * @param {number} practiceId - Practice ID
@@ -413,22 +433,22 @@ const apiService = {
     const response = await apiRequest(endpoint, {
       method: 'GET',
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to get practice ranges');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Get account settings
    * @returns {Promise<object>} - Account settings
@@ -437,22 +457,22 @@ const apiService = {
     const response = await apiRequest(API_ENDPOINTS.GET_ACCOUNT_SETTINGS, {
       method: 'GET',
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to get account settings');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Toggle two-way authentication
    * @param {number} status - 0 to disable, 1 to enable
@@ -463,22 +483,22 @@ const apiService = {
     const response = await apiRequest(endpoint, {
       method: 'PUT',
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to toggle two-way authentication');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Update session settings
    * @param {number} sessionTime - Session timeout in minutes
@@ -489,22 +509,22 @@ const apiService = {
       method: 'PUT',
       body: JSON.stringify({ lifetime: sessionTime }),
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to update session settings');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Clear cache
    * @returns {Promise<object>} - Response
@@ -513,22 +533,22 @@ const apiService = {
     const response = await apiRequest(API_ENDPOINTS.CLEAR_CACHE, {
       method: 'POST',
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = await handleApiError(response, 'Failed to clear cache');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Forgot password with OTP (sends OTP via email)
    * @param {string} email - User email
@@ -537,29 +557,29 @@ const apiService = {
   forgotPasswordWithOTP: async (email) => {
     const endpoint = API_ENDPOINTS.FORGOT_PASSWORD_OTP;
     const fullUrl = `${API_CONFIG.BASE_URL}${endpoint}`;
-    
+
     console.log('📧 Forgot Password OTP Request:', {
       endpoint,
       fullUrl,
       email: email ? email.substring(0, 3) + '***' : 'missing'
     });
-    
+
     const response = await apiRequest(endpoint, {
       method: 'POST',
       body: JSON.stringify({ email }),
     });
-    
+
     console.log('📧 Forgot Password OTP Response:', {
       status: response.status,
       statusText: response.statusText,
       ok: response.ok,
       url: response.url || fullUrl
     });
-    
+
     const data = await safeParseResponse(response);
-    
+
     console.log('📧 Forgot Password OTP Response Data:', data);
-    
+
     if (!response.ok) {
       // If 404, provide specific error message about missing endpoint
       if (response.status === 404) {
@@ -572,7 +592,7 @@ const apiService = {
         });
         throw new Error(errorMessage);
       }
-      
+
       const errorMessage = await handleApiError(response, 'Failed to send OTP');
       console.error('📧 Forgot Password OTP Error:', {
         status: response.status,
@@ -581,7 +601,7 @@ const apiService = {
       });
       throw new Error(errorMessage);
     }
-    
+
     if (!data || !data.success) {
       const errorMessage = data?.message || 'Failed to send OTP';
       console.error('📧 Forgot Password OTP Error - Invalid response:', {
@@ -589,10 +609,10 @@ const apiService = {
       });
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Verify password reset OTP
    * @param {string} email - User email
@@ -601,36 +621,36 @@ const apiService = {
    */
   verifyPasswordResetOTP: async (email, otp) => {
     console.log('🔐 Verifying password reset OTP for email:', email);
-    
+
     // Ensure we have a session cookie before making the request
     const sessionCookie = await getSessionCookie();
     console.log('🍪 Session cookie available:', sessionCookie ? 'Yes' : 'No');
-    
+
     const response = await apiRequest(API_ENDPOINTS.VERIFY_PASSWORD_RESET_OTP, {
       method: 'POST',
       body: JSON.stringify({ email, otp }),
     });
-    
+
     console.log('📥 Verify OTP response status:', response.status);
-    
+
     const data = await safeParseResponse(response);
     console.log('📥 Verify OTP response data:', JSON.stringify(data, null, 2));
-    
+
     // Check if response contains a session_id (for mobile clients)
     if (data && data.session_id) {
       await setSessionCookie(data.session_id);
       console.log('✅ Session ID stored after OTP verification');
     }
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = data?.message || await handleApiError(response, 'Failed to verify OTP');
       console.error('❌ Verify OTP error:', errorMessage);
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Change password (for authenticated users)
    * @param {string} currentPassword - Current password
@@ -642,22 +662,22 @@ const apiService = {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     });
-    
+
     if (await isSessionExpired(response)) {
       await setSessionCookie(null);
       throw new Error('Session expired. Please login again.');
     }
-    
+
     const data = await safeParseResponse(response);
-    
+
     if (!response.ok || !data || !data.success) {
       const errorMessage = data?.message || await handleApiError(response, 'Failed to change password');
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
-  
+
   /**
    * Reset password with OTP (after OTP verification)
    * @param {string} email - User email
@@ -666,21 +686,21 @@ const apiService = {
    */
   resetPasswordWithOTP: async (email, password) => {
     console.log('🔐 Resetting password with OTP for email:', email);
-    
+
     // Ensure we have a session cookie before making the request
     const sessionCookie = await getSessionCookie();
     console.log('🍪 Session cookie available:', sessionCookie ? 'Yes' : 'No');
-    
+
     const response = await apiRequest(API_ENDPOINTS.RESET_PASSWORD_OTP, {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    
+
     console.log('📥 Reset password response status:', response.status);
-    
+
     const data = await safeParseResponse(response);
     console.log('📥 Reset password response data:', JSON.stringify(data, null, 2));
-    
+
     if (!response.ok || !data || !data.success) {
       // Get the actual error message from the backend
       const errorMessage = data?.message || await handleApiError(response, 'Failed to reset password');
@@ -689,7 +709,7 @@ const apiService = {
       console.error('❌ Response data:', data);
       throw new Error(errorMessage);
     }
-    
+
     return data;
   },
 };
