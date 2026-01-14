@@ -25,11 +25,15 @@ const API_BASE_URL = 'http://13.233.6.224:3007'; // Default for emulator. Change
 const PredictiveAnalysisScreen = ({ navigation }) => {
     const [predictions, setPredictions] = useState([]);
     const [summary, setSummary] = useState(null);
+    const [glucosePredictions, setGlucosePredictions] = useState([]);
+    const [glucoseSummary, setGlucoseSummary] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [patientInfo, setPatientInfo] = useState(null);
     const [status, setStatus] = useState(null);
+    const [glucoseStatus, setGlucoseStatus] = useState(null);
     const [hasEnoughData, setHasEnoughData] = useState(false);
+    const [glucoseHasEnoughData, setGlucoseHasEnoughData] = useState(false);
     const [activeTab, setActiveTab] = useState('BP'); // BP or Glucose
 
     // Helper function to make API calls
@@ -69,7 +73,6 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
         }
     };
 
-    // Get blood pressure predictions
     const getBloodPressurePredictions = async (practiceId, patientId) => {
         try {
             const pid = practiceId && practiceId !== 'null' ? practiceId : '1';
@@ -77,6 +80,30 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
             return await apiCall(endpoint, { method: 'GET' });
         } catch (error) {
             console.error('Prediction fetch error:', error);
+            throw error;
+        }
+    };
+
+    // Check glucose prediction status
+    const checkGlucoseStatus = async (practiceId, patientId) => {
+        try {
+            const pid = practiceId && practiceId !== 'null' ? practiceId : '1';
+            const endpoint = `/api/practices/${pid}/patients/${patientId}/predictions/glucose/status`;
+            return await apiCall(endpoint, { method: 'GET' });
+        } catch (error) {
+            console.error('Glucose status check error:', error);
+            throw error;
+        }
+    };
+
+    // Get glucose predictions
+    const getGlucosePredictions = async (practiceId, patientId) => {
+        try {
+            const pid = practiceId && practiceId !== 'null' ? practiceId : '1';
+            const endpoint = `/api/practices/${pid}/patients/${patientId}/predictions/glucose?horizon=${HORIZON_DAYS}`;
+            return await apiCall(endpoint, { method: 'GET' });
+        } catch (error) {
+            console.error('Glucose prediction fetch error:', error);
             throw error;
         }
     };
@@ -111,47 +138,41 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
                 return;
             }
 
-            // 1. First check prediction status
-            console.log(`📊 Checking prediction status for patient: ${patientId}, practice: ${practiceId}`);
-
-            const statusResponse = await checkPredictionStatus(practiceId, patientId);
-            console.log('✅ Status response:', statusResponse);
-
-            if (statusResponse.success) {
-                setStatus(statusResponse);
-                setHasEnoughData(statusResponse.canPredict);
-
-                if (statusResponse.canPredict) {
-                    // 2. Fetch predictions
-                    console.log('🚀 Patient has enough data, fetching predictions...');
-                    const predictionResponse = await getBloodPressurePredictions(practiceId, patientId);
-                    console.log('📈 Prediction response:', predictionResponse);
-
-                    if (predictionResponse.success) {
-                        setPredictions(predictionResponse.predictions || []);
-                        setSummary(predictionResponse.summary || null);
-                        setPatientInfo({
-                            patientId: predictionResponse.patientId,
-                            patientName: predictionResponse.patientName
-                        });
-
-                        console.log(`✅ Loaded ${predictionResponse.predictions?.length || 0} predictions`);
-                    } else {
-                        Alert.alert('Prediction Failed', predictionResponse.message || 'Could not generate predictions');
+            if (activeTab === 'BP') {
+                const statusResponse = await checkPredictionStatus(practiceId, patientId);
+                if (statusResponse.success) {
+                    setStatus(statusResponse);
+                    setHasEnoughData(statusResponse.canPredict);
+                    if (statusResponse.canPredict) {
+                        const predictionResponse = await getBloodPressurePredictions(practiceId, patientId);
+                        if (predictionResponse.success) {
+                            setPredictions(predictionResponse.predictions || []);
+                            setSummary(predictionResponse.summary || null);
+                            setPatientInfo({
+                                patientId: predictionResponse.patientId,
+                                patientName: predictionResponse.patientName
+                            });
+                        }
                     }
-                } else {
-                    console.log('⚠️ Not enough data for predictions:', statusResponse.message);
                 }
             } else {
-                Alert.alert('Status Check Failed', statusResponse.message || 'Could not check prediction status');
+                const statusResponse = await checkGlucoseStatus(practiceId, patientId);
+                if (statusResponse.success) {
+                    setGlucoseStatus(statusResponse);
+                    setGlucoseHasEnoughData(statusResponse.canPredict);
+                    if (statusResponse.canPredict) {
+                        const predictionResponse = await getGlucosePredictions(practiceId, patientId);
+                        if (predictionResponse.success) {
+                            setGlucosePredictions(predictionResponse.predictions || []);
+                            setGlucoseSummary(predictionResponse.summary || null);
+                        }
+                    }
+                }
             }
 
         } catch (error) {
             console.error('❌ Error fetching prediction data:', error);
-            Alert.alert(
-                'Error',
-                `Failed to fetch predictions. Please check:\n1. Backend is running on localhost:3000\n2. You have internet connection\n\nError: ${error.message}`
-            );
+            Alert.alert('Error', `Failed to fetch predictions: ${error.message}`);
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -161,7 +182,7 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
     // Initial load
     useEffect(() => {
         fetchPredictionData();
-    }, []);
+    }, [activeTab]);
 
     // Pull to refresh
     const onRefresh = () => {
@@ -171,76 +192,113 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
 
     // Render prediction item
     const renderPredictionItem = ({ item, index }) => {
-        const getRiskColor = (riskLevel) => {
-            switch (riskLevel) {
-                case 'CRISIS': return '#ff4444';
-                case 'HIGH': return '#ff8800';
-                case 'ELEVATED': return '#ffbb33';
-                case 'NORMAL': return '#00C851';
-                default: return '#666666';
-            }
-        };
+        if (activeTab === 'BP') {
+            const getRiskColor = (riskLevel) => {
+                switch (riskLevel) {
+                    case 'CRISIS': return '#ff4444';
+                    case 'HIGH': return '#ff8800';
+                    case 'ELEVATED': return '#ffbb33';
+                    case 'NORMAL': return '#00C851';
+                    default: return '#666666';
+                }
+            };
 
-        const getRiskIcon = (riskLevel) => {
-            switch (riskLevel) {
-                case 'CRISIS': return '⚠️';
-                case 'HIGH': return '🔴';
-                case 'ELEVATED': return '🟡';
-                case 'NORMAL': return '🟢';
-                default: return '⚪';
-            }
-        };
+            const getRiskIcon = (riskLevel) => {
+                switch (riskLevel) {
+                    case 'CRISIS': return '⚠️';
+                    case 'HIGH': return '🔴';
+                    case 'ELEVATED': return '🟡';
+                    case 'NORMAL': return '🟢';
+                    default: return '⚪';
+                }
+            };
 
-        return (
-            <View style={styles.predictionCard}>
-                <View style={styles.dateHeader}>
-                    <Text style={styles.dateText}>
-                        {new Date(item.forecast_date).toLocaleDateString('en-US', {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric'
-                        })}
-                    </Text>
-                    <View style={[styles.riskBadge, { backgroundColor: getRiskColor(item.risk_level) }]}>
-                        <Text style={styles.riskText}>
-                            {getRiskIcon(item.risk_level)} {item.risk_level}
+            return (
+                <View style={styles.predictionCard}>
+                    <View style={styles.dateHeader}>
+                        <Text style={styles.dateText}>
+                            {new Date(item.forecast_date).toLocaleDateString('en-US', {
+                                weekday: 'short',
+                                month: 'short',
+                                day: 'numeric'
+                            })}
                         </Text>
-                    </View>
-                </View>
-
-                <View style={styles.predictionRow}>
-                    <View style={styles.bpColumn}>
-                        <Text style={styles.bpLabel}>SYS (mmHg)</Text>
-                        <View style={[styles.bpValueContainer, {
-                            borderLeftColor: item.pred_sys >= 140 ? '#ff4444' :
-                                item.pred_sys >= 130 ? '#ff8800' :
-                                    item.pred_sys >= 120 ? '#ffbb33' : '#00C851'
-                        }]}>
-                            <Text style={styles.bpValue}>{item.pred_sys?.toFixed(1) || '--'}</Text>
+                        <View style={[styles.riskBadge, { backgroundColor: getRiskColor(item.risk_level) }]}>
+                            <Text style={styles.riskText}>
+                                {getRiskIcon(item.risk_level)} {item.risk_level}
+                            </Text>
                         </View>
                     </View>
 
-                    <View style={styles.divider} />
+                    <View style={styles.predictionRow}>
+                        <View style={styles.bpColumn}>
+                            <Text style={styles.bpLabel}>SYS (mmHg)</Text>
+                            <View style={[styles.bpValueContainer, {
+                                borderLeftColor: item.pred_sys >= 140 ? '#ff4444' :
+                                    item.pred_sys >= 130 ? '#ff8800' :
+                                        item.pred_sys >= 120 ? '#ffbb33' : '#00C851'
+                            }]}>
+                                <Text style={styles.bpValue}>{item.pred_sys?.toFixed(1) || '--'}</Text>
+                            </View>
+                        </View>
 
-                    <View style={styles.bpColumn}>
-                        <Text style={styles.bpLabel}>DIA (mmHg)</Text>
-                        <View style={[styles.bpValueContainer, {
-                            borderLeftColor: item.pred_dia >= 90 ? '#ff4440' :
-                                item.pred_dia >= 80 ? '#ff8800' : '#00C851'
-                        }]}>
-                            <Text style={styles.bpValue}>{item.pred_dia?.toFixed(1) || '--'}</Text>
+                        <View style={styles.divider} />
+
+                        <View style={styles.bpColumn}>
+                            <Text style={styles.bpLabel}>DIA (mmHg)</Text>
+                            <View style={[styles.bpValueContainer, {
+                                borderLeftColor: item.pred_dia >= 90 ? '#ff4440' :
+                                    item.pred_dia >= 80 ? '#ff8800' : '#00C851'
+                            }]}>
+                                <Text style={styles.bpValue}>{item.pred_dia?.toFixed(1) || '--'}</Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.divider} />
+
+                        <View style={styles.modelColumn}>
+                            <Text style={styles.modelLabel}>Model</Text>
+                            <Text style={styles.modelText}>{item.model || '--'}</Text>
+                        </View>
+                    </View>
+                </View>
+            );
+        } else {
+            return (
+                <View style={styles.predictionCard}>
+                    <View style={styles.dateHeader}>
+                        <Text style={styles.dateText}>
+                            {new Date(item.forecast_date).toLocaleDateString('en-US', {
+                                weekday: 'short',
+                                month: 'short',
+                                day: 'numeric'
+                            })}
+                        </Text>
+                        <View style={[styles.riskBadge, { backgroundColor: '#F0F2F5' }]}>
+                            <Text style={[styles.riskText, { color: '#666' }]}>
+                                🧪 Forecast
+                            </Text>
                         </View>
                     </View>
 
-                    <View style={styles.divider} />
+                    <View style={styles.predictionRow}>
+                        <View style={styles.bpColumn}>
+                            <Text style={styles.bpLabel}>GLUCOSE (mg/dL)</Text>
+                            <View style={[styles.bpValueContainer, { borderLeftColor: NAVY_BLUE }]}>
+                                <Text style={styles.bpValue}>{item.predicted_value?.toFixed(1) || '--'}</Text>
+                            </View>
+                        </View>
 
-                    <View style={styles.modelColumn}>
-                        <Text style={styles.modelLabel}>Model</Text>
-                        <Text style={styles.modelText}>{item.model || '--'}</Text>
+                        <View style={styles.divider} />
+
+                        <View style={styles.modelColumn}>
+                            <Text style={styles.modelLabel}>Model</Text>
+                            <Text style={styles.modelText}>{item.model || '--'}</Text>
+                        </View>
                     </View>
                 </View>
-            </View>
-        );
+            );
+        }
     };
 
     // Render model summary
@@ -340,7 +398,6 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={NAVY_BLUE} />
                     <Text style={styles.loadingText}>Loading predictions...</Text>
-                    <Text style={styles.loadingSubtext}>Fetching data from localhost:3000</Text>
                 </View>
             </SafeAreaView>
         );
@@ -475,13 +532,67 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
                         )}
                     </>
                 ) : (
-                    <View style={styles.glucosePlaceholder}>
-                        <Text style={styles.placeholderIcon}>🧪</Text>
-                        <Text style={styles.placeholderTitle}>Glucose Predictions</Text>
-                        <Text style={styles.placeholderText}>
-                            Coming soon! We are currently working on the AI model for blood glucose forecasting.
-                        </Text>
-                    </View>
+                    <>
+                        {/* Glucose Case */}
+                        {!glucoseHasEnoughData && glucoseStatus && (
+                            <View style={styles.insufficientDataCard}>
+                                <Text style={styles.insufficientTitle}>📊 Data Requirements</Text>
+                                <Text style={styles.insufficientText}>
+                                    To generate accurate glucose predictions, we need at least 30 readings.
+                                </Text>
+                                <View style={styles.requirementsRow}>
+                                    <Text style={styles.requirementText}>• Minimum readings: 30</Text>
+                                    <Text style={styles.requirementText}>• Your readings: {glucoseStatus.currentReadings || 0}</Text>
+                                </View>
+                                <TouchableOpacity
+                                    style={styles.addDataButton}
+                                    onPress={() => navigation.navigate('Glucose')}
+                                >
+                                    <Text style={styles.addDataButtonText}>📝 Add Glucose Measurements</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
+                        {glucoseHasEnoughData && glucosePredictions.length > 0 && (
+                            <View style={styles.section}>
+                                <Text style={styles.sectionTitle}>📅 Glucose Forecast (Next {HORIZON_DAYS} Days)</Text>
+                                <FlatList
+                                    data={glucosePredictions}
+                                    renderItem={renderPredictionItem}
+                                    keyExtractor={(item, index) => `glucose-${item.forecast_date}-${index}`}
+                                    scrollEnabled={false}
+                                />
+                            </View>
+                        )}
+
+                        {glucoseHasEnoughData && glucoseSummary && (
+                            <View style={styles.section}>
+                                <Text style={styles.sectionTitle}>📈 Analysis Summary</Text>
+                                <View style={styles.recordCard}>
+                                    <Text style={styles.summaryLabel}>Average Predicted Glucose</Text>
+                                    <Text style={styles.summaryValue}>
+                                        {glucoseSummary.SARIMA?.avg_predicted} mg/dL
+                                    </Text>
+                                    <Text style={styles.summarySubtext}>Based on SARIMA forecasting model</Text>
+                                </View>
+                            </View>
+                        )}
+
+                        {glucoseHasEnoughData && (!glucosePredictions || glucosePredictions.length === 0) && (
+                            <View style={styles.emptyStateCard}>
+                                <Text style={styles.emptyStateTitle}>📊 Processing...</Text>
+                                <Text style={styles.emptyStateText}>
+                                    We are calculating your glucose forecast data.
+                                </Text>
+                                <TouchableOpacity
+                                    style={styles.tryAgainButton}
+                                    onPress={onRefresh}
+                                >
+                                    <Text style={styles.tryAgainButtonText}>🔄 Refresh</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                    </>
                 )}
 
                 {/* Debug Info (for development) */}
