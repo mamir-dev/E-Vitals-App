@@ -21,6 +21,7 @@ import { LineChart } from 'react-native-chart-kit';
 import { colors, fonts } from '../../config/globall';
 import apiService from '../../services/apiService';
 import Orientation from 'react-native-orientation-locker';
+import FullTrendChartModal from '../common/FullTrendChartModal';
 
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -790,61 +791,14 @@ const DataList = ({ navigation, route }) => {
         </TouchableOpacity>
       </Modal>
 
-      {/* Chart Modal */}
-      <Modal
-        transparent={false}
+      {/* Full Chart Modal */}
+      <FullTrendChartModal
         visible={showChartModal}
-        animationType="slide"
-        onRequestClose={handleCloseChartModal}
-      >
-        <SafeAreaView style={styles.chartModalContainer}>
-          <View style={styles.chartModalHeader}>
-            <Text style={styles.chartModalTitle}>{getTitle()} - Trend Chart</Text>
-            <TouchableOpacity
-              style={styles.chartModalCloseButton}
-              onPress={handleCloseChartModal}
-            >
-              <Text style={styles.chartModalCloseText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            horizontal
-            style={styles.chartModalScroll}
-            contentContainerStyle={styles.chartModalContent}
-            showsHorizontalScrollIndicator={true}
-          >
-            <View style={styles.chartModalChartContainer}>
-              <LineChart
-                data={fullChartData}
-                width={Math.max(width, measurements.length * 50)}
-                height={height * 0.5}
-                chartConfig={{
-                  ...chartConfig,
-                  propsForLabels: { fontSize: 12 },
-                }}
-                bezier
-                style={styles.chartModalChart}
-                withHorizontalLines={true}
-                withVerticalLines={false}
-                fromZero={false}
-              />
-              {dataType === 'bloodPressure' && (
-                <View style={styles.legend}>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: NAVY_BLUE }]} />
-                    <Text style={styles.legendText}>Systolic</Text>
-                  </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
-                    <Text style={styles.legendText}>Diastolic</Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
+        onClose={handleCloseChartModal}
+        measurements={measurements}
+        dataType={dataType}
+        title={`${getTitle()} - Trend Chart`}
+      />
 
 
     </SafeAreaView>
