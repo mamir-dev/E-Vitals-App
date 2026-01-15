@@ -65,12 +65,10 @@ const SCALED_VALUES = {
     legendItemMarginHorizontal: getResponsiveSize(16),
     legendDotSize: getResponsiveSize(6),
     legendDotMarginRight: getResponsiveSize(8),
-    legendTextFontSize: getResponsiveSize(12), // Increased default
+    legendTextFontSize: getResponsiveSize(6),
 };
 
 /* ──────────────────────  FULL CHART MODAL COMPONENT  ────────────────────── */
-import { useWindowDimensions } from 'react-native';
-
 const FullTrendChartModal = ({
     visible = false,
     onClose,
@@ -78,8 +76,6 @@ const FullTrendChartModal = ({
     dataType = 'bloodPressure',
     title = 'Trend Chart',
 }) => {
-    const { width, height } = useWindowDimensions();
-
     if (measurements.length === 0) {
         return null;
     }
@@ -147,12 +143,12 @@ const FullTrendChartModal = ({
         color: () => NAVY_BLUE,
         labelColor: () => TEXT_LIGHT,
         propsForDots: {
-            r: '5',
+            r: '3',
             strokeWidth: '2',
             stroke: NAVY_BLUE,
         },
         propsForLabels: {
-            fontSize: 12, // Fixed readable size
+            fontSize: getResponsiveSize(10), // Fixed responsive font for chart labels
             fontWeight: '600',
         },
         strokeWidth: 3,
@@ -160,12 +156,7 @@ const FullTrendChartModal = ({
     };
 
     // Width calculation ONLY for the LineChart component
-    const modalChartWidth = Math.max(width * 0.7, measurements.length * 35);
-
-    // Dynamic styles for things that really depend on size
-    const dynamicLegendStyle = {
-        fontSize: 14, // Ensure readability
-    };
+    const modalChartWidth = Math.max(screenWidth * 0.7, measurements.length * 35);
 
     return (
         <Modal
@@ -196,7 +187,7 @@ const FullTrendChartModal = ({
                         <LineChart
                             data={chartData}
                             width={modalChartWidth}
-                            height={height * 0.35}
+                            height={screenHeight * 0.5}
                             chartConfig={chartConfig}
                             bezier
                             style={styles.fullChartChart}
@@ -211,11 +202,11 @@ const FullTrendChartModal = ({
                             <View style={styles.fullChartLegend}>
                                 <View style={styles.fullChartLegendItem}>
                                     <View style={[styles.fullChartLegendDot, { backgroundColor: NAVY_BLUE }]} />
-                                    <Text style={[styles.fullChartLegendText, dynamicLegendStyle]}>Systolic</Text>
+                                    <Text style={styles.fullChartLegendText}>Systolic</Text>
                                 </View>
                                 <View style={styles.fullChartLegendItem}>
                                     <View style={[styles.fullChartLegendDot, { backgroundColor: '#EF4444' }]} />
-                                    <Text style={[styles.fullChartLegendText, dynamicLegendStyle]}>Diastolic</Text>
+                                    <Text style={styles.fullChartLegendText}>Diastolic</Text>
                                 </View>
                             </View>
                         )}
