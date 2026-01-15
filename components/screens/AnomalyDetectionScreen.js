@@ -17,18 +17,20 @@ import apiService from '../../services/apiService';
 const NAVY_BLUE = colors.primaryButton || '#293d55';
 
 const AnomalyDetectionScreen = ({ navigation }) => {
+    const [activeTab, setActiveTab] = useState('bp'); // 'bp' or 'glucose'
     const [loading, setLoading] = useState(true);
     const [anomalies, setAnomalies] = useState([]);
     const [error, setError] = useState(null);
 
     useEffect(() => {
         fetchAnomalies();
-    }, []);
+    }, [activeTab]);
 
     const fetchAnomalies = async () => {
         try {
             setLoading(true);
             setError(null);
+            setAnomalies([]);
 
             // Get patient info from storage
             let patientId = await AsyncStorage.getItem('patientId');
@@ -37,8 +39,6 @@ const AnomalyDetectionScreen = ({ navigation }) => {
             // Fallback if not in storage: fetch profile
             if (!patientId || !practiceId) {
                 const profile = await apiService.getPatientProfile();
-                console.log('Profile fetched in Anomaly Screen:', JSON.stringify(profile)); // Debugging
-
                 // Access 'data' instead of 'patient' based on controller response
                 if (profile && (profile.data || profile.patient)) {
                     const patientData = profile.data || profile.patient;
@@ -57,13 +57,18 @@ const AnomalyDetectionScreen = ({ navigation }) => {
                 throw new Error("Could not identify patient/practice.");
             }
 
-            const response = await apiService.getBloodPressureAnomalies(practiceId, patientId);
+            let response;
+            if (activeTab === 'bp') {
+                response = await apiService.getBloodPressureAnomalies(practiceId, patientId);
+            } else {
+                response = await apiService.getGlucoseAnomalies(practiceId, patientId);
+            }
+
             setAnomalies(response.anomalies || []);
 
         } catch (err) {
             setError(err.message);
             console.error("Anomaly fetch error:", err);
-            // Alert.alert("Error", "Failed to fetch anomalies.");
         } finally {
             setLoading(false);
         }
@@ -79,8 +84,17 @@ const AnomalyDetectionScreen = ({ navigation }) => {
             </View>
 
             <View style={styles.readingRow}>
-                <Text style={styles.readingLabel}>Blood Pressure:</Text>
-                <Text style={styles.readingValue}>{item.SYS} / {item.DIA} mmHg</Text>
+                {activeTab === 'bp' ? (
+                    <>
+                        <Text style={styles.readingLabel}>Blood Pressure:</Text>
+                        <Text style={styles.readingValue}>{item.SYS} / {item.DIA} mmHg</Text>
+                    </>
+                ) : (
+                    <>
+                        <Text style={styles.readingLabel}>Glucose:</Text>
+                        <Text style={styles.readingValue}>{item.GLUCOSE} mg/dL</Text>
+                    </>
+                )}
             </View>
 
             <View style={styles.divider} />
@@ -100,10 +114,25 @@ const AnomalyDetectionScreen = ({ navigation }) => {
                 <Text style={styles.title}>Anomaly Detection</Text>
             </View>
 
+            <View style={styles.tabContainer}>
+                <TouchableOpacity
+                    style={[styles.tab, activeTab === 'bp' && styles.activeTab]}
+                    onPress={() => setActiveTab('bp')}
+                >
+                    <Text style={[styles.tabText, activeTab === 'bp' && styles.activeTabText]}>Blood Pressure</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={[styles.tab, activeTab === 'glucose' && styles.activeTab]}
+                    onPress={() => setActiveTab('glucose')}
+                >
+                    <Text style={[styles.tabText, activeTab === 'glucose' && styles.activeTabText]}>Glucose</Text>
+                </TouchableOpacity>
+            </View>
+
             {loading ? (
                 <View style={styles.center}>
                     <ActivityIndicator size="large" color={NAVY_BLUE} />
-                    <Text style={styles.loadingText}>Analyzing health patterns...</Text>
+                    <Text style={styles.loadingText}>Analyzing {activeTab === 'bp' ? 'blood pressure' : 'glucose'} patterns...</Text>
                 </View>
             ) : error ? (
                 <View style={styles.center}>
@@ -116,7 +145,7 @@ const AnomalyDetectionScreen = ({ navigation }) => {
                 <View style={styles.center}>
                     <Text style={styles.successIcon}>✓</Text>
                     <Text style={styles.emptyText}>No anomalies detected.</Text>
-                    <Text style={styles.subText}>Your blood pressure patterns look normal based on recent history.</Text>
+                    <Text style={styles.subText}>Your {activeTab === 'bp' ? 'blood pressure' : 'glucose'} patterns look normal based on recent history.</Text>
                 </View>
             ) : (
                 <FlatList
@@ -162,6 +191,32 @@ const styles = StyleSheet.create({
         fontSize: 20,
         fontWeight: 'bold',
         marginLeft: 5,
+    },
+    tabContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#FFFFFF',
+        paddingHorizontal: 15,
+        paddingVertical: 10,
+        elevation: 2,
+    },
+    tab: {
+        flex: 1,
+        paddingVertical: 10,
+        alignItems: 'center',
+        borderBottomWidth: 2,
+        borderBottomColor: 'transparent',
+    },
+    activeTab: {
+        borderBottomColor: NAVY_BLUE,
+    },
+    tabText: {
+        fontSize: 16,
+        color: '#666',
+        fontWeight: '500',
+    },
+    activeTabText: {
+        color: NAVY_BLUE,
+        fontWeight: 'bold',
     },
     list: {
         padding: 16,

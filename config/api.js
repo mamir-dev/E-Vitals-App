@@ -65,4 +65,5 @@ export const API_ENDPOINTS = {
 
   // Anomalies
   GET_BLOOD_PRESSURE_ANOMALIES: (practiceId, patientId) => `/practices/${practiceId}/patients/${patientId}/anomaly/blood-pressure`,
+  GET_GLUCOSE_ANOMALIES: (practiceId, patientId) => `/practices/${practiceId}/patients/${patientId}/anomaly/glucose`,
 };

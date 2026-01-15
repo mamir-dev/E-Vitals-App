@@ -745,6 +745,38 @@ const apiService = {
 
     return data;
   },
+
+  /**
+   * Get glucose anomalies
+   * @param {number} practiceId - Practice ID
+   * @param {number} patientId - Patient ID
+   * @returns {Promise<object>} - Anomalies data
+   */
+  getGlucoseAnomalies: async (practiceId, patientId) => {
+    let endpoint = API_ENDPOINTS.GET_GLUCOSE_ANOMALIES(practiceId, patientId);
+
+    if (!endpoint) {
+      endpoint = `/practices/${practiceId}/patients/${patientId}/anomaly/glucose`;
+    }
+
+    const response = await apiRequest(endpoint, {
+      method: 'GET',
+    });
+
+    if (await isSessionExpired(response)) {
+      await setSessionCookie(null);
+      throw new Error('Session expired. Please login again.');
+    }
+
+    const data = await safeParseResponse(response);
+
+    if (!response.ok || !data || !data.success) {
+      const errorMessage = await handleApiError(response, 'Failed to get glucose anomalies');
+      throw new Error(errorMessage);
+    }
+
+    return data;
+  },
 };
 
 export default apiService;
