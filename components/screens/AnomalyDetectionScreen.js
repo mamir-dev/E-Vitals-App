@@ -37,12 +37,19 @@ const AnomalyDetectionScreen = ({ navigation }) => {
             // Fallback if not in storage: fetch profile
             if (!patientId || !practiceId) {
                 const profile = await apiService.getPatientProfile();
-                if (profile && profile.patient) {
-                    patientId = profile.patient.id;
-                    practiceId = profile.patient.practice_id;
-                    // Store for future use
-                    await AsyncStorage.setItem('patientId', String(patientId));
-                    await AsyncStorage.setItem('practiceId', String(practiceId));
+                console.log('Profile fetched in Anomaly Screen:', JSON.stringify(profile)); // Debugging
+
+                // Access 'data' instead of 'patient' based on controller response
+                if (profile && (profile.data || profile.patient)) {
+                    const patientData = profile.data || profile.patient;
+                    patientId = patientData.id;
+                    practiceId = patientData.practice_id;
+
+                    if (patientId && practiceId) {
+                        // Store for future use
+                        await AsyncStorage.setItem('patientId', String(patientId));
+                        await AsyncStorage.setItem('practiceId', String(practiceId));
+                    }
                 }
             }
 
