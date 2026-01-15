@@ -712,6 +712,39 @@ const apiService = {
 
     return data;
   },
+
+  /**
+   * Get blood pressure anomalies
+   * @param {number} practiceId - Practice ID
+   * @param {number} patientId - Patient ID
+   * @returns {Promise<object>} - Anomalies data
+   */
+  getBloodPressureAnomalies: async (practiceId, patientId) => {
+    let endpoint = API_ENDPOINTS.GET_BLOOD_PRESSURE_ANOMALIES(practiceId, patientId);
+
+    // Check if endpoint is defined (in case config wasn't updated yet in some environments)
+    if (!endpoint) {
+      endpoint = `/practices/${practiceId}/patients/${patientId}/anomaly/blood-pressure`;
+    }
+
+    const response = await apiRequest(endpoint, {
+      method: 'GET',
+    });
+
+    if (await isSessionExpired(response)) {
+      await setSessionCookie(null);
+      throw new Error('Session expired. Please login again.');
+    }
+
+    const data = await safeParseResponse(response);
+
+    if (!response.ok || !data || !data.success) {
+      const errorMessage = await handleApiError(response, 'Failed to get anomalies');
+      throw new Error(errorMessage);
+    }
+
+    return data;
+  },
 };
 
 export default apiService;

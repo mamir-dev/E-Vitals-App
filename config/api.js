@@ -62,4 +62,7 @@ export const API_ENDPOINTS = {
 
   // Practice Settings
   GET_PRACTICE_RANGES: (practiceId) => `/practices/${practiceId}/settings/ranges`,
+
+  // Anomalies
+  GET_BLOOD_PRESSURE_ANOMALIES: (practiceId, patientId) => `/practices/${practiceId}/patients/${patientId}/anomaly/blood-pressure`,
 };

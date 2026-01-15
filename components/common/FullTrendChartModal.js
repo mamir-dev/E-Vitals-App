@@ -13,19 +13,60 @@ import {
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 
+// Get dimensions once and memoize them
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-const guidelineBaseWidth = 375;
-
-// Responsive scaling
-const scaleWidth = size => (screenWidth / guidelineBaseWidth) * size;
-const scaleFont = size => scaleWidth(size);
-const scaleHeight = size => (screenHeight / 812) * size;
 
 /* ──────────────────────  COLORS  ────────────────────── */
 const NAVY_BLUE = '#293d55';
 const WHITE = '#FFFFFF';
 const TEXT_LIGHT = '#666666';
 const BORDER_GREY = '#E0E0E0';
+
+/* ──────────────────────  RESPONSIVE UTILITIES  ────────────────────── */
+// Fixed responsive scaling that won't change between reloads
+const isSmallScreen = screenWidth < 375;
+const isLargeScreen = screenWidth > 414;
+
+// Fixed scaling factors - these won't change
+const getResponsiveSize = (size) => {
+    const scaleFactor = screenWidth / 375; // Base on iPhone 6/7/8 width
+    const scaledSize = size * scaleFactor;
+
+    // Round to nearest 0.5 for better rendering
+    return Math.round(scaledSize * 2) / 2;
+};
+
+const getResponsiveHeight = (size) => {
+    const scaleFactor = screenHeight / 812; // Base on iPhone X height
+    const scaledSize = size * scaleFactor;
+    return Math.round(scaledSize * 2) / 2;
+};
+
+/* ──────────────────────  FIXED SCALED VALUES  ────────────────────── */
+// Pre-calculate all responsive values to prevent recalculation
+const SCALED_VALUES = {
+    // Header
+    headerPaddingHorizontal: getResponsiveSize(10),
+    headerPaddingVertical: getResponsiveHeight(1),
+    headerTitleFontSize: getResponsiveSize(10),
+    closeButtonPadding: getResponsiveSize(4),
+    closeButtonMarginLeft: getResponsiveSize(6),
+    closeButtonFontSize: getResponsiveSize(18),
+
+    // Chart Container
+    scrollPadding: getResponsiveSize(13),
+    scrollPaddingLeft: getResponsiveSize(0.2),
+    chartBorderRadius: getResponsiveSize(8),
+
+    // Legend
+    legendMarginTop: getResponsiveHeight(16),
+    legendPaddingVertical: getResponsiveHeight(12),
+    legendBorderRadius: getResponsiveSize(8),
+    legendItemMarginHorizontal: getResponsiveSize(16),
+    legendDotSize: getResponsiveSize(6),
+    legendDotMarginRight: getResponsiveSize(8),
+    legendTextFontSize: getResponsiveSize(6),
+};
 
 /* ──────────────────────  FULL CHART MODAL COMPONENT  ────────────────────── */
 const FullTrendChartModal = ({
@@ -107,16 +148,15 @@ const FullTrendChartModal = ({
             stroke: NAVY_BLUE,
         },
         propsForLabels: {
-            fontSize: 12,
+            fontSize: getResponsiveSize(12), // Fixed responsive font for chart labels
             fontWeight: '600',
         },
         strokeWidth: 3,
         useShadowColorFromDataset: false,
     };
 
-    // Width calculation ONLY for the LineChart component inside this modal
-    // This does NOT affect any other styles or components
-    const modalChartWidth = Math.max(screenWidth * 0.7, measurements.length * 30);
+    // Width calculation ONLY for the LineChart component
+    const modalChartWidth = Math.max(screenWidth * 0.7, measurements.length * 35);
 
     return (
         <Modal
@@ -128,7 +168,11 @@ const FullTrendChartModal = ({
             <SafeAreaView style={styles.fullChartContainer}>
                 <View style={styles.fullChartHeader}>
                     <Text style={styles.fullChartHeaderTitle}>{title}</Text>
-                    <TouchableOpacity style={styles.fullChartCloseButton} onPress={onClose}>
+                    <TouchableOpacity
+                        style={styles.fullChartCloseButton}
+                        onPress={onClose}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
                         <Text style={styles.fullChartCloseButtonText}>✕</Text>
                     </TouchableOpacity>
                 </View>
@@ -183,24 +227,24 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: scaleWidth(10),
-        paddingVertical: scaleHeight(1),
+        paddingHorizontal: SCALED_VALUES.headerPaddingHorizontal,
+        paddingVertical: SCALED_VALUES.headerPaddingVertical,
         backgroundColor: NAVY_BLUE,
         borderBottomWidth: 1,
         borderBottomColor: BORDER_GREY,
     },
     fullChartHeaderTitle: {
-        fontSize: scaleFont(10),
+        fontSize: SCALED_VALUES.headerTitleFontSize,
         fontWeight: '600',
         color: WHITE,
         flex: 1,
     },
     fullChartCloseButton: {
-        padding: scaleWidth(4),
-        marginLeft: scaleWidth(6),
+        padding: SCALED_VALUES.closeButtonPadding,
+        marginLeft: SCALED_VALUES.closeButtonMarginLeft,
     },
     fullChartCloseButtonText: {
-        fontSize: scaleFont(18),
+        fontSize: SCALED_VALUES.closeButtonFontSize,
         color: WHITE,
         fontWeight: '300',
     },
@@ -208,35 +252,36 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     fullChartScrollContent: {
-        padding: scaleWidth(20),
+        padding: SCALED_VALUES.scrollPadding,
+        paddingLeft: SCALED_VALUES.scrollPaddingLeft,
     },
     fullChartChartContainer: {
         backgroundColor: WHITE,
     },
     fullChartChart: {
-        borderRadius: scaleWidth(8),
+        borderRadius: SCALED_VALUES.chartBorderRadius,
     },
     fullChartLegend: {
         flexDirection: 'row',
         justifyContent: 'center',
-        marginTop: scaleHeight(16),
-        paddingVertical: scaleHeight(12),
+        marginTop: SCALED_VALUES.legendMarginTop,
+        paddingVertical: SCALED_VALUES.legendPaddingVertical,
         backgroundColor: '#F8F9FA',
-        borderRadius: scaleWidth(8),
+        borderRadius: SCALED_VALUES.legendBorderRadius,
     },
     fullChartLegendItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginHorizontal: scaleWidth(16),
+        marginHorizontal: SCALED_VALUES.legendItemMarginHorizontal,
     },
     fullChartLegendDot: {
-        width: scaleWidth(6),
-        height: scaleWidth(6),
-        borderRadius: scaleWidth(6),
-        marginRight: scaleWidth(8),
+        width: SCALED_VALUES.legendDotSize,
+        height: SCALED_VALUES.legendDotSize,
+        borderRadius: SCALED_VALUES.legendDotSize,
+        marginRight: SCALED_VALUES.legendDotMarginRight,
     },
     fullChartLegendText: {
-        fontSize: scaleFont(6),
+        fontSize: SCALED_VALUES.legendTextFontSize,
         color: TEXT_LIGHT,
         fontWeight: '600',
     },
