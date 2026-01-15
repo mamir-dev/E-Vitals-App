@@ -15,6 +15,8 @@ import {
 import { colors } from '../../config/globall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import apiService from '../../services/apiService';
+
 const NAVY_BLUE = colors.primaryButton || '#293d55';
 const HORIZON_DAYS = 7; // Predict for next 7 days
 
@@ -35,6 +37,7 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
     const [hasEnoughData, setHasEnoughData] = useState(false);
     const [glucoseHasEnoughData, setGlucoseHasEnoughData] = useState(false);
     const [activeTab, setActiveTab] = useState('BP'); // BP or Glucose
+    const [practiceRanges, setPracticeRanges] = useState(null);
 
     // Helper function to make API calls
     const apiCall = async (endpoint, options = {}) => {
@@ -138,6 +141,19 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
                 return;
             }
 
+            // Fetch practice ranges
+            if (practiceId && !practiceRanges) {
+                try {
+                    const rangesResult = await apiService.getPracticeRanges(practiceId);
+                    if (rangesResult && rangesResult.data) {
+                        setPracticeRanges(rangesResult.data.ranges || rangesResult.data);
+                        console.log('✅ Practice ranges loaded:', rangesResult.data);
+                    }
+                } catch (e) {
+                    console.warn('Could not fetch practice ranges:', e.message);
+                }
+            }
+
             if (activeTab === 'BP') {
                 const statusResponse = await checkPredictionStatus(practiceId, patientId);
                 if (statusResponse.success) {
@@ -190,28 +206,62 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
         fetchPredictionData();
     };
 
+    // Evaluate Risk using Practice Ranges
+    const evaluateRisk = (systolic, diastolic) => {
+        if (!systolic || !diastolic) return 'UNKNOWN';
+
+        // Defaults if no ranges available
+        const ranges = practiceRanges?.blood_pressure || {};
+
+        // Thresholds based on Home.js logic
+        // If >= High Min -> Abnormal (High)
+        // If <= Low Max -> Abnormal (Low)
+        // Else -> Normal
+
+        const highSys = ranges.high?.systolic?.min || 140;
+        const highDia = ranges.high?.diastolic?.min || 90;
+
+        const lowSys = ranges.low?.systolic?.max || 90;
+        const lowDia = ranges.low?.diastolic?.max || 60;
+
+        const isHigh = systolic >= highSys || diastolic >= highDia;
+        const isLow = systolic <= lowSys || diastolic <= lowDia;
+
+        if (isHigh || isLow) return 'ABNORMAL';
+        return 'NORMAL';
+    };
+
     // Render prediction item
     const renderPredictionItem = ({ item, index }) => {
         if (activeTab === 'BP') {
-            const getRiskColor = (riskLevel) => {
-                switch (riskLevel) {
-                    case 'CRISIS': return '#ff4444';
-                    case 'HIGH': return '#ff8800';
-                    case 'ELEVATED': return '#ffbb33';
-                    case 'NORMAL': return '#00C851';
+            // Determine risk dynamically based on predicted values
+            const riskLevel = evaluateRisk(item.pred_sys, item.pred_dia);
+
+            const getRiskColor = (level) => {
+                switch (level) {
+                    case 'ABNORMAL': return '#ff4444'; // Red
+                    case 'NORMAL': return '#00C851';   // Green
                     default: return '#666666';
                 }
             };
 
-            const getRiskIcon = (riskLevel) => {
-                switch (riskLevel) {
-                    case 'CRISIS': return '⚠️';
-                    case 'HIGH': return '🔴';
-                    case 'ELEVATED': return '🟡';
+            const getRiskIcon = (level) => {
+                switch (level) {
+                    case 'ABNORMAL': return '⚠️';
                     case 'NORMAL': return '🟢';
                     default: return '⚪';
                 }
             };
+
+            // Get Thresholds for styling borders
+            const ranges = practiceRanges?.blood_pressure || {};
+            const highSys = ranges.high?.systolic?.min || 140;
+            const highDia = ranges.high?.diastolic?.min || 90;
+            const lowSys = ranges.low?.systolic?.max || 90;
+            const lowDia = ranges.low?.diastolic?.max || 60;
+
+            const isAbnormalSys = item.pred_sys >= highSys || item.pred_sys <= lowSys;
+            const isAbnormalDia = item.pred_dia >= highDia || item.pred_dia <= lowDia;
 
             return (
                 <View style={styles.predictionCard}>
@@ -223,9 +273,9 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
                                 day: 'numeric'
                             })}
                         </Text>
-                        <View style={[styles.riskBadge, { backgroundColor: getRiskColor(item.risk_level) }]}>
+                        <View style={[styles.riskBadge, { backgroundColor: getRiskColor(riskLevel) }]}>
                             <Text style={styles.riskText}>
-                                {getRiskIcon(item.risk_level)} {item.risk_level}
+                                {getRiskIcon(riskLevel)} {riskLevel}
                             </Text>
                         </View>
                     </View>
@@ -234,9 +284,7 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
                         <View style={styles.bpColumn}>
                             <Text style={styles.bpLabel}>SYS (mmHg)</Text>
                             <View style={[styles.bpValueContainer, {
-                                borderLeftColor: item.pred_sys >= 140 ? '#ff4444' :
-                                    item.pred_sys >= 130 ? '#ff8800' :
-                                        item.pred_sys >= 120 ? '#ffbb33' : '#00C851'
+                                borderLeftColor: isAbnormalSys ? '#ff4444' : '#00C851'
                             }]}>
                                 <Text style={styles.bpValue}>{item.pred_sys?.toFixed(1) || '--'}</Text>
                             </View>
@@ -247,8 +295,7 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
                         <View style={styles.bpColumn}>
                             <Text style={styles.bpLabel}>DIA (mmHg)</Text>
                             <View style={[styles.bpValueContainer, {
-                                borderLeftColor: item.pred_dia >= 90 ? '#ff4440' :
-                                    item.pred_dia >= 80 ? '#ff8800' : '#00C851'
+                                borderLeftColor: isAbnormalDia ? '#ff4440' : '#00C851'
                             }]}>
                                 <Text style={styles.bpValue}>{item.pred_dia?.toFixed(1) || '--'}</Text>
                             </View>
@@ -308,9 +355,13 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
         const getRiskCount = (riskLevel) => {
             return predictions.filter(p =>
                 p.model === modelName &&
-                p.risk_level === riskLevel
+                // use dynamic evaluation logic here too
+                evaluateRisk(p.pred_sys, p.pred_dia) === riskLevel
             ).length;
         };
+
+        const abnormalCount = getRiskCount('ABNORMAL');
+        const normalCount = getRiskCount('NORMAL');
 
         return (
             <View style={styles.summaryCard}>
@@ -332,29 +383,19 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
                     <View style={styles.statDivider} />
 
                     <View style={styles.statItem}>
-                        <Text style={styles.statValue}>
-                            {(getRiskCount('HIGH') + getRiskCount('CRISIS')) || 0}
-                        </Text>
-                        <Text style={styles.statLabel}>High Risk Days</Text>
+                        <Text style={styles.statValue}>{abnormalCount || 0}</Text>
+                        <Text style={styles.statLabel}>Abnormal Days</Text>
                     </View>
                 </View>
 
                 <View style={styles.riskDistribution}>
                     <View style={[styles.riskBar, {
                         backgroundColor: '#00C851',
-                        width: `${((getRiskCount('NORMAL') || 0) / HORIZON_DAYS) * 100}%`
-                    }]} />
-                    <View style={[styles.riskBar, {
-                        backgroundColor: '#ffbb33',
-                        width: `${((getRiskCount('ELEVATED') || 0) / HORIZON_DAYS) * 100}%`
-                    }]} />
-                    <View style={[styles.riskBar, {
-                        backgroundColor: '#ff8800',
-                        width: `${((getRiskCount('HIGH') || 0) / HORIZON_DAYS) * 100}%`
+                        width: `${((normalCount || 0) / HORIZON_DAYS) * 100}%`
                     }]} />
                     <View style={[styles.riskBar, {
                         backgroundColor: '#ff4444',
-                        width: `${((getRiskCount('CRISIS') || 0) / HORIZON_DAYS) * 100}%`
+                        width: `${((abnormalCount || 0) / HORIZON_DAYS) * 100}%`
                     }]} />
                 </View>
             </View>
@@ -402,6 +443,13 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
             </SafeAreaView>
         );
     }
+
+    // Get ranges for Legend Display
+    const ranges = practiceRanges?.blood_pressure || {};
+    const highSys = ranges.high?.systolic?.min || 140;
+    const highDia = ranges.high?.diastolic?.min || 90;
+    const lowSys = ranges.low?.systolic?.max || 90;
+    const lowDia = ranges.low?.diastolic?.max || 60;
 
     return (
         <SafeAreaView style={styles.container}>
@@ -506,26 +554,15 @@ const PredictiveAnalysisScreen = ({ navigation }) => {
                                     <View style={styles.legendItem}>
                                         <View style={[styles.legendColor, { backgroundColor: '#00C851' }]} />
                                         <Text style={styles.legendText}>Normal</Text>
-                                        <Text style={styles.legendSubtext}>SYS {'<'} 120</Text>
-                                        <Text style={styles.legendSubtext}>DIA {'<'} 80</Text>
-                                    </View>
-                                    <View style={styles.legendItem}>
-                                        <View style={[styles.legendColor, { backgroundColor: '#ffbb33' }]} />
-                                        <Text style={styles.legendText}>Elevated</Text>
-                                        <Text style={styles.legendSubtext}>SYS 120-129</Text>
-                                        <Text style={styles.legendSubtext}>DIA {'<'} 80</Text>
-                                    </View>
-                                    <View style={styles.legendItem}>
-                                        <View style={[styles.legendColor, { backgroundColor: '#ff8800' }]} />
-                                        <Text style={styles.legendText}>High</Text>
-                                        <Text style={styles.legendSubtext}>SYS 130-139</Text>
-                                        <Text style={styles.legendSubtext}>DIA 80-89</Text>
+                                        <Text style={styles.legendSubtext}>SYS {lowSys + 1}-{highSys - 1}</Text>
+                                        <Text style={styles.legendSubtext}>DIA {lowDia + 1}-{highDia - 1}</Text>
                                     </View>
                                     <View style={styles.legendItem}>
                                         <View style={[styles.legendColor, { backgroundColor: '#ff4444' }]} />
-                                        <Text style={styles.legendText}>Crisis</Text>
-                                        <Text style={styles.legendSubtext}>SYS ≥140</Text>
-                                        <Text style={styles.legendSubtext}>DIA ≥90</Text>
+                                        <Text style={styles.legendText}>Abnormal</Text>
+                                        <Text style={styles.legendSubtext}>Outside Normal Range</Text>
+                                        <Text style={styles.legendSubtext}>High: SYS ≥ {highSys}, DIA ≥ {highDia}</Text>
+                                        <Text style={styles.legendSubtext}>Low: SYS ≤ {lowSys}, DIA ≤ {lowDia}</Text>
                                     </View>
                                 </View>
                             </View>
