@@ -65,10 +65,12 @@ const SCALED_VALUES = {
     legendItemMarginHorizontal: getResponsiveSize(16),
     legendDotSize: getResponsiveSize(6),
     legendDotMarginRight: getResponsiveSize(8),
-    legendTextFontSize: getResponsiveSize(6),
+    legendTextFontSize: getResponsiveSize(12), // Increased default
 };
 
 /* ──────────────────────  FULL CHART MODAL COMPONENT  ────────────────────── */
+import { useWindowDimensions } from 'react-native';
+
 const FullTrendChartModal = ({
     visible = false,
     onClose,
@@ -76,6 +78,8 @@ const FullTrendChartModal = ({
     dataType = 'bloodPressure',
     title = 'Trend Chart',
 }) => {
+    const { width, height } = useWindowDimensions();
+
     if (measurements.length === 0) {
         return null;
     }
@@ -148,7 +152,7 @@ const FullTrendChartModal = ({
             stroke: NAVY_BLUE,
         },
         propsForLabels: {
-            fontSize: getResponsiveSize(12), // Fixed responsive font for chart labels
+            fontSize: 12, // Fixed readable size
             fontWeight: '600',
         },
         strokeWidth: 3,
@@ -156,7 +160,12 @@ const FullTrendChartModal = ({
     };
 
     // Width calculation ONLY for the LineChart component
-    const modalChartWidth = Math.max(screenWidth * 0.7, measurements.length * 35);
+    const modalChartWidth = Math.max(width * 0.7, measurements.length * 35);
+
+    // Dynamic styles for things that really depend on size
+    const dynamicLegendStyle = {
+        fontSize: 14, // Ensure readability
+    };
 
     return (
         <Modal
@@ -187,7 +196,7 @@ const FullTrendChartModal = ({
                         <LineChart
                             data={chartData}
                             width={modalChartWidth}
-                            height={screenHeight * 0.5}
+                            height={height * 0.35}
                             chartConfig={chartConfig}
                             bezier
                             style={styles.fullChartChart}
@@ -202,11 +211,11 @@ const FullTrendChartModal = ({
                             <View style={styles.fullChartLegend}>
                                 <View style={styles.fullChartLegendItem}>
                                     <View style={[styles.fullChartLegendDot, { backgroundColor: NAVY_BLUE }]} />
-                                    <Text style={styles.fullChartLegendText}>Systolic</Text>
+                                    <Text style={[styles.fullChartLegendText, dynamicLegendStyle]}>Systolic</Text>
                                 </View>
                                 <View style={styles.fullChartLegendItem}>
                                     <View style={[styles.fullChartLegendDot, { backgroundColor: '#EF4444' }]} />
-                                    <Text style={styles.fullChartLegendText}>Diastolic</Text>
+                                    <Text style={[styles.fullChartLegendText, dynamicLegendStyle]}>Diastolic</Text>
                                 </View>
                             </View>
                         )}
